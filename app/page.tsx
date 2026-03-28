@@ -1,19 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useUser, UserButton, SignIn } from "@clerk/nextjs";
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Area, AreaChart
+  ResponsiveContainer, Area
 } from "recharts";
 import {
-  TrendingUp, TrendingDown, Search, Menu, X, Wallet,
-  LayoutDashboard, BarChart2, Star, Activity, Newspaper,
-  Plus, Trash2, RefreshCw, CreditCard, ChevronUp, ChevronDown
+  TrendingUp, Search, Menu, X, Wallet,
+  LayoutDashboard, BarChart2, Star, Newspaper,
+  Plus, Trash2, CreditCard, ChevronUp, ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useStore } from "@/lib/store";
-import { getQuote, getNews } from "@/lib/api";
+import { useStore } from "../lib/store";
+import { getQuote, getNews } from "../lib/api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface NewsItem { headline: string; source: string; datetime: number; url: string; }
