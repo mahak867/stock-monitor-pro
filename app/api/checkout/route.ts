@@ -1,4 +1,4 @@
-﻿import Stripe from 'stripe';
+import Stripe from 'stripe';
 import { NextResponse } from 'next/server';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2026-02-25.clover' });
@@ -9,11 +9,11 @@ export async function POST() {
       payment_method_types: ['card'],
       line_items: [{ price_data: { currency: 'usd', product_data: { name: 'StockPro Premium' }, unit_amount: 1900 }, quantity: 1 }],
       mode: 'payment',
-      success_url: $( ?? 'http://localhost:3000')?success=true,
-      cancel_url: $( ?? 'http://localhost:3000')?canceled=true,
+      success_url: `${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}?success=true`,
+      cancel_url: `${process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'}?canceled=true`,
     });
     return NextResponse.json({ url: session.url });
-  } catch (err: unknown) {
+  } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });
   }
