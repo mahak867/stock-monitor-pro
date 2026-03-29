@@ -4,28 +4,48 @@ import { useState, useEffect } from "react";
 import { useUser, UserButton, SignIn } from "@clerk/nextjs";
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Area
+  ResponsiveContainer, Area,
 } from "recharts";
 import {
   TrendingUp, Search, Menu, X, Wallet,
   LayoutDashboard, BarChart2, Star, Newspaper,
-  Plus, Trash2, CreditCard, ChevronUp, ChevronDown
+  Plus, Trash2, CreditCard, ChevronUp, ChevronDown,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "../lib/store";
 import { getQuote, getNews } from "../lib/api";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-interface NewsItem { headline: string; source: string; datetime: number; url: string; }
-interface QuoteData { c: number; d: number; dp: number; h: number; l: number; o: number; pc: number; }
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface NewsItem {
+  headline: string;
+  source: string;
+  datetime: number;
+  url: string;
+}
+interface QuoteData {
+  c: number;
+  d: number;
+  dp: number;
+  h: number;
+  l: number;
+  o: number;
+  pc: number;
+}
+interface ChartPoint {
+  time: string;
+  price: number;
+  sma: number;
+  ema: number;
+  volume: number;
+}
 
-// ─── Mock chart data generator ───────────────────────────────────────────────
-const generateChartData = (base = 100) => {
+// ── Mock chart data ───────────────────────────────────────────────────────────
+const generateChartData = (base = 100): ChartPoint[] => {
   let price = base;
   return Array.from({ length: 50 }, (_, i) => {
     price += (Math.random() - 0.48) * 2;
     return {
-      time: `${i}m`,
+      time: i + "m",
       price: parseFloat(price.toFixed(2)),
       sma: parseFloat((price + 0.5).toFixed(2)),
       ema: parseFloat((price - 0.2).toFixed(2)),
@@ -34,8 +54,10 @@ const generateChartData = (base = 100) => {
   });
 };
 
-// ─── Stat Card ───────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, positive }: {
+// ── Stat Card ─────────────────────────────────────────────────────────────────
+function StatCard({
+  label, value, sub, positive,
+}: {
   label: string; value: string; sub?: string; positive?: boolean;
 }) {
   return (
@@ -45,7 +67,7 @@ function StatCard({ label, value, sub, positive }: {
       className="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-slate-700 transition-colors"
     >
       <p className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-2">{label}</p>
-      <h3 className={`text-2xl font-bold ${positive === undefined ? "text-white" : positive ? "text-emerald-400" : "text-red-400"}`}>
+      <h3 className={"text-2xl font-bold " + (positive === undefined ? "text-white" : positive ? "text-emerald-400" : "text-red-400")}>
         {value}
       </h3>
       {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
@@ -53,23 +75,22 @@ function StatCard({ label, value, sub, positive }: {
   );
 }
 
-// ─── Technical Chart ─────────────────────────────────────────────────────────
+// ── Technical Chart ───────────────────────────────────────────────────────────
 function TechnicalChart({ symbol }: { symbol: string }) {
-  const [data, setData] = useState<ReturnType<typeof generateChartData>>([]);
+  const [data, setData] = useState<ChartPoint[]>([]);
   const [quote, setQuote] = useState<QuoteData | null>(null);
 
   useEffect(() => {
     const base = symbol === "AAPL" ? 170 : symbol === "TSLA" ? 250 : symbol === "MSFT" ? 380 : 150;
     setData(generateChartData(base));
-
-    getQuote(symbol).then((q) => { if (q && q.c) setQuote(q); });
+    getQuote(symbol).then((q: QuoteData | null) => { if (q && q.c) setQuote(q); });
 
     const interval = setInterval(() => {
       setData((prev) => {
         const last = prev[prev.length - 1]?.price ?? 150;
         const next = last + (Math.random() - 0.48) * 1.5;
-        const point = {
-          time: `${prev.length}m`,
+        const point: ChartPoint = {
+          time: prev.length + "m",
           price: parseFloat(next.toFixed(2)),
           sma: parseFloat((next + 0.5).toFixed(2)),
           ema: parseFloat((next - 0.2).toFixed(2)),
@@ -93,7 +114,7 @@ function TechnicalChart({ symbol }: { symbol: string }) {
           <div className="flex items-center gap-3">
             <h3 className="text-xl font-bold text-white">{symbol}</h3>
             {quote && (
-              <span className={`text-sm font-semibold px-2 py-0.5 rounded-lg ${quote.dp >= 0 ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
+              <span className={"text-sm font-semibold px-2 py-0.5 rounded-lg " + (quote.dp >= 0 ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400")}>
                 {quote.dp >= 0 ? "+" : ""}{quote.dp?.toFixed(2)}%
               </span>
             )}
@@ -108,7 +129,7 @@ function TechnicalChart({ symbol }: { symbol: string }) {
         </div>
         <div className="text-right">
           <p className="text-2xl font-bold text-white">${last.toFixed(2)}</p>
-          <p className={`text-sm font-medium ${isUp ? "text-emerald-400" : "text-red-400"} flex items-center justify-end gap-1`}>
+          <p className={"text-sm font-medium flex items-center justify-end gap-1 " + (isUp ? "text-emerald-400" : "text-red-400")}>
             {isUp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             {Math.abs(last - first).toFixed(2)} today
           </p>
@@ -148,7 +169,7 @@ function TechnicalChart({ symbol }: { symbol: string }) {
   );
 }
 
-// ─── Analyst Ratings ─────────────────────────────────────────────────────────
+// ── Analyst Ratings ───────────────────────────────────────────────────────────
 function AnalystRatings() {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
@@ -167,7 +188,7 @@ function AnalystRatings() {
   );
 }
 
-// ─── Watchlist Panel ─────────────────────────────────────────────────────────
+// ── Watchlist Panel ───────────────────────────────────────────────────────────
 function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void; selected: string }) {
   const { watchlist, addToWatchlist, removeFromWatchlist } = useStore();
   const [input, setInput] = useState("");
@@ -185,13 +206,12 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
       <h3 className="font-semibold text-white text-sm uppercase tracking-widest flex items-center gap-2">
         <Star size={14} className="text-amber-400" /> Watchlist
       </h3>
-
       <div className="flex gap-2">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-          placeholder="Add symbol…"
+          placeholder="Add symbol..."
           maxLength={5}
           className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-blue-500 uppercase"
         />
@@ -199,15 +219,14 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
           <Plus size={14} className="text-white" />
         </button>
       </div>
-
       <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
         {watchlist.map((sym) => (
           <div
             key={sym}
             onClick={() => onSelect(sym)}
-            className={`flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition-colors ${selected === sym ? "bg-blue-600/20 border border-blue-500/30" : "hover:bg-slate-800 border border-transparent"}`}
+            className={"flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition-colors border " + (selected === sym ? "bg-blue-600/20 border-blue-500/30" : "hover:bg-slate-800 border-transparent")}
           >
-            <span className={`text-sm font-semibold ${selected === sym ? "text-blue-400" : "text-white"}`}>{sym}</span>
+            <span className={"text-sm font-semibold " + (selected === sym ? "text-blue-400" : "text-white")}>{sym}</span>
             <button
               onClick={(e) => { e.stopPropagation(); removeFromWatchlist(sym); }}
               className="text-slate-600 hover:text-red-400 transition-colors"
@@ -221,29 +240,32 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
   );
 }
 
-// ─── News Feed ────────────────────────────────────────────────────────────────
+// ── News Feed ─────────────────────────────────────────────────────────────────
 function NewsFeed() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getNews().then((data) => {
-      if (data && data.length > 0) setNews(data);
-      else setNews([
-        { headline: "Markets Rally Amid Fed Policy Update", source: "Bloomberg", datetime: Date.now() - 120000, url: "#" },
-        { headline: "Analysts Upgrade Apple to Strong Buy", source: "Reuters", datetime: Date.now() - 900000, url: "#" },
-        { headline: "S&P 500 Hits New All-Time High", source: "CNBC", datetime: Date.now() - 3600000, url: "#" },
-        { headline: "Tech Earnings Season Kicks Off Strong", source: "WSJ", datetime: Date.now() - 7200000, url: "#" },
-      ]);
+    getNews().then((data: NewsItem[]) => {
+      if (data && data.length > 0) {
+        setNews(data);
+      } else {
+        setNews([
+          { headline: "Markets Rally Amid Fed Policy Update", source: "Bloomberg", datetime: Date.now() - 120000, url: "#" },
+          { headline: "Analysts Upgrade Apple to Strong Buy", source: "Reuters", datetime: Date.now() - 900000, url: "#" },
+          { headline: "S&P 500 Hits New All-Time High", source: "CNBC", datetime: Date.now() - 3600000, url: "#" },
+          { headline: "Tech Earnings Season Kicks Off Strong", source: "WSJ", datetime: Date.now() - 7200000, url: "#" },
+        ]);
+      }
       setLoading(false);
     });
   }, []);
 
   const timeAgo = (ts: number) => {
     const diff = Math.floor((Date.now() - ts * (ts < 1e12 ? 1000 : 1)) / 60000);
-    if (diff < 60) return `${diff}m ago`;
-    if (diff < 1440) return `${Math.floor(diff / 60)}h ago`;
-    return `${Math.floor(diff / 1440)}d ago`;
+    if (diff < 60) return diff + "m ago";
+    if (diff < 1440) return Math.floor(diff / 60) + "h ago";
+    return Math.floor(diff / 1440) + "d ago";
   };
 
   return (
@@ -280,7 +302,7 @@ function NewsFeed() {
   );
 }
 
-// ─── Upgrade Banner ───────────────────────────────────────────────────────────
+// ── Upgrade Banner ────────────────────────────────────────────────────────────
 function UpgradeBanner() {
   const [loading, setLoading] = useState(false);
 
@@ -301,7 +323,7 @@ function UpgradeBanner() {
     <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/20 rounded-2xl p-4 flex items-center justify-between">
       <div>
         <p className="text-sm font-semibold text-white">Upgrade to Pro</p>
-        <p className="text-xs text-slate-400 mt-0.5">Real-time data, alerts & advanced analytics</p>
+        <p className="text-xs text-slate-400 mt-0.5">Real-time data, alerts and advanced analytics</p>
       </div>
       <button
         onClick={handleUpgrade}
@@ -309,13 +331,13 @@ function UpgradeBanner() {
         className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-colors"
       >
         <CreditCard size={14} />
-        {loading ? "Redirecting…" : "$19 / mo"}
+        {loading ? "Redirecting..." : "$19 / mo"}
       </button>
     </div>
   );
 }
 
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
+// ── Dashboard ─────────────────────────────────────────────────────────────────
 function Dashboard() {
   const { user } = useUser();
   const { portfolio, balance } = useStore();
@@ -328,17 +350,20 @@ function Dashboard() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (search.trim()) { setSymbol(search.trim().toUpperCase()); setSearch(""); }
+    if (search.trim()) {
+      setSymbol(search.trim().toUpperCase());
+      setSearch("");
+    }
   };
 
   const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "portfolio", label: "Portfolio", icon: Wallet },
-    { id: "watchlist", label: "Watchlist", icon: Star },
-  ] as const;
+    { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
+    { id: "portfolio" as const, label: "Portfolio", icon: Wallet },
+    { id: "watchlist" as const, label: "Watchlist", icon: Star },
+  ];
 
   return (
-    <div className="flex h-screen bg-slate-950 overflow-hidden font-sans">
+    <div className="flex h-screen bg-slate-950 overflow-hidden">
       {/* Sidebar */}
       <motion.aside
         animate={{ width: sidebarOpen ? 220 : 72 }}
@@ -355,17 +380,21 @@ function Dashboard() {
               </motion.div>
             )}
           </AnimatePresence>
-          <button onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 transition-colors shrink-0">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 transition-colors shrink-0"
+          >
             {sidebarOpen ? <X size={16} /> : <Menu size={16} />}
           </button>
         </div>
 
         <nav className="flex flex-col gap-1 px-3 flex-1">
           {navItems.map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors text-sm font-medium
-                ${activeTab === id ? "bg-blue-600 text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={"flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors text-sm font-medium " + (activeTab === id ? "bg-blue-600 text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white")}
+            >
               <Icon size={17} className="shrink-0" />
               <AnimatePresence>
                 {sidebarOpen && (
@@ -394,7 +423,6 @@ function Dashboard() {
 
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
         <header className="bg-slate-900/60 backdrop-blur border-b border-slate-800 px-6 py-3 flex justify-between items-center shrink-0">
           <h2 className="text-lg font-bold text-white capitalize">{activeTab}</h2>
           <form onSubmit={handleSearch} className="relative">
@@ -403,30 +431,23 @@ function Dashboard() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value.toUpperCase())}
-              placeholder="Search symbol…"
+              placeholder="Search symbol..."
               maxLength={5}
-              className="pl-9 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm w-56
-                focus:ring-2 focus:ring-blue-500 outline-none text-white placeholder-slate-500 uppercase"
+              className="pl-9 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm w-56 focus:ring-2 focus:ring-blue-500 outline-none text-white placeholder-slate-500 uppercase"
             />
           </form>
         </header>
 
-        {/* Content */}
         <main className="flex-1 overflow-y-auto p-6 bg-slate-950">
           {activeTab === "dashboard" && (
             <div className="space-y-5 max-w-7xl mx-auto">
-              {/* Stats row */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard label="Balance" value={`$${balance.toLocaleString()}`} sub="Available cash" />
-                <StatCard label="Portfolio" value={`$${portfolioValue.toLocaleString()}`} sub={`${portfolio.length} positions`} />
+                <StatCard label="Balance" value={"$" + balance.toLocaleString()} sub="Available cash" />
+                <StatCard label="Portfolio" value={"$" + portfolioValue.toLocaleString()} sub={portfolio.length + " positions"} />
                 <StatCard label="Day P/L" value="+2.4%" positive={true} sub="vs yesterday" />
                 <StatCard label="All-time" value="+18.7%" positive={true} sub="since inception" />
               </div>
-
-              {/* Upgrade */}
               <UpgradeBanner />
-
-              {/* Chart + Sidebar */}
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
                 <div className="lg:col-span-3 space-y-5">
                   <TechnicalChart symbol={symbol} />
@@ -464,7 +485,10 @@ function Dashboard() {
 
           {activeTab === "watchlist" && (
             <div className="max-w-lg mx-auto">
-              <WatchlistPanel onSelect={(s) => { setSymbol(s); setActiveTab("dashboard"); }} selected={symbol} />
+              <WatchlistPanel
+                onSelect={(s) => { setSymbol(s); setActiveTab("dashboard"); }}
+                selected={symbol}
+              />
             </div>
           )}
         </main>
@@ -473,7 +497,7 @@ function Dashboard() {
   );
 }
 
-// ─── Root ─────────────────────────────────────────────────────────────────────
+// ── Root ──────────────────────────────────────────────────────────────────────
 export default function Home() {
   const { isSignedIn, isLoaded } = useUser();
 
@@ -481,7 +505,7 @@ export default function Home() {
     <div className="h-screen flex items-center justify-center bg-slate-950">
       <div className="flex flex-col items-center gap-4">
         <TrendingUp className="text-blue-500 animate-pulse" size={36} />
-        <p className="text-slate-400 text-sm">Loading…</p>
+        <p className="text-slate-400 text-sm">Loading...</p>
       </div>
     </div>
   );
@@ -493,7 +517,7 @@ export default function Home() {
           <TrendingUp className="text-blue-500" size={32} />
           <h1 className="text-4xl font-bold text-white tracking-tight">StockPro</h1>
         </div>
-        <p className="text-slate-400">Professional stock monitoring & portfolio tracking</p>
+        <p className="text-slate-400">Professional stock monitoring and portfolio tracking</p>
       </div>
       <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl w-full max-w-sm">
         <SignIn routing="hash" appearance={{
@@ -504,7 +528,7 @@ export default function Home() {
             headerSubtitle: "text-slate-400",
             formFieldInput: "bg-slate-800 border-slate-700 text-white rounded-xl",
             footerActionLink: "text-blue-400 hover:text-blue-300",
-          }
+          },
         }} />
       </div>
     </div>
