@@ -1,91 +1,108 @@
 ﻿"use client";
-
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useUser, UserButton, SignIn } from "@clerk/nextjs";
 import {
-  ComposedChart, AreaChart, Area, Bar, XAxis, YAxis,
-  Tooltip, ResponsiveContainer, CartesianGrid,
-  BarChart,
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import {
-  TrendingUp, TrendingDown, Search, Menu, X, Wallet, LayoutDashboard,
-  Star, Newspaper, BarChart2, Bell, Settings, Sun, Moon, Plus, Trash2,
-  CreditCard, ChevronUp, ChevronDown, Bitcoin, Globe, Filter,
-  AlertTriangle, CheckCircle, Zap, Brain, RefreshCw, ArrowUpRight,
-  ArrowDownRight, Info,
+  TrendingUp, Search, Menu, X, Wallet,
+  LayoutDashboard, Star, Filter, Settings,
+  Bell, Plus, Trash2, CreditCard, RefreshCw,
+  ChevronUp, ChevronDown, Globe, Brain,
+  CheckCircle, AlertTriangle, Zap, ArrowUpRight, ArrowDownRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "../lib/store";
 import {
-  getQuote, getCandles, getFundamentals, getMetrics, getNews,
-  getCryptoQuote, searchSymbol, generateMockCandles, getClaudeAnalysis, getEarnings,
-  INDIAN_STOCKS, US_STOCKS, CRYPTO_LIST,
-  type Quote, type Candle, type NewsItem, type Fundamentals,
-  type Metrics, type SearchResult, type EarningsItem,
+  getQuote, getCandles, getProfile, getMetrics, getEarnings,
+  getRecommendations, getNews, getCryptoQuote, searchSymbol,
+  getClaudeAnalysis, mockCandles,
+  US_STOCKS, INDIA_STOCKS, CRYPTO_LIST,
+  safeN,
+  type Quote, type Candle, type Profile, type Metrics,
+  type NewsItem, type SearchResult, type EarningsItem, type RecommendationItem,
 } from "../lib/api";
 
-// ---- Helpers ----
-const n = (v: number | null | undefined, d = 2) => {
-  if (v == null || isNaN(v as number)) return 0;
-  return v as number;
+// -- helpers ------------------------------------------------------------------
+const fmtPrice = (v: unknown, decimals = 2): string => {
+  const n = safeN(v);
+  return n.toFixed(decimals);
 };
-const fmt = (v: number | null | undefined, prefix = '', suffix = '') => {
-  const num = n(v);
-  if (Math.abs(num) >= 1e9) return prefix + (num / 1e9).toFixed(2) + 'B' + suffix;
-  if (Math.abs(num) >= 1e6) return prefix + (num / 1e6).toFixed(2) + 'M' + suffix;
-  if (Math.abs(num) >= 1e3) return prefix + num.toLocaleString(undefined, { maximumFractionDigits: 2 }) + suffix;
-  return prefix + num.toFixed(2) + suffix;
+const fmtBig = (v: unknown, prefix = ''): string => {
+  const n = safeN(v);
+  if (n >= 1e12) return prefix + (n / 1e12).toFixed(2) + 'T';
+  if (n >= 1e9) return prefix + (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return prefix + (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return prefix + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return prefix + n.toFixed(2);
 };
-const fmtDate = (ts: number) => new Date(ts * 1000).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
-const timeAgo = (ts: number) => {
+const timeAgo = (ts: number): string => {
   const d = Math.floor((Date.now() - (ts < 1e12 ? ts * 1000 : ts)) / 60000);
   if (d < 60) return d + 'm ago';
   if (d < 1440) return Math.floor(d / 60) + 'h ago';
   return Math.floor(d / 1440) + 'd ago';
 };
+const fmtDate = (ts: number): string =>
+  new Date(ts * 1000).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
 
-// ---- Bubble Background ----
-function BubbleBg() {
-  const bubbles = Array.from({ length: 8 }, (_, i) => ({
-    id: i, size: 60 + Math.random() * 120,
-    x: 10 + Math.random() * 80, y: 10 + Math.random() * 80,
-    delay: i * 0.5, dur: 4 + Math.random() * 3,
-  }));
+const UP_COLOR = '#22c55e';
+const DOWN_COLOR = '#ef4444';
+const BLUE = '#3b82f6';
+
+// -- Sparkline ----------------------------------------------------------------
+function Spark({ data, up }: { data: number[]; up: boolean }) {
+  if (data.length < 2) return <div style={{ width: 72, height: 24 }} />;
+  const vals = data.map(safeN);
+  const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1;
+  const pts = vals.map((v, i) =>
+    `${(i / (vals.length - 1)) * 70},${22 - ((v - min) / range) * 20}`
+  ).join(' ');
+  const color = up ? UP_COLOR : DOWN_COLOR;
   return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-      {bubbles.map(b => (
-        <motion.div key={b.id}
-          animate={{ y: [0, -30, 0], scale: [1, 1.08, 1], opacity: [0.4, 0.7, 0.4] }}
-          transition={{ duration: b.dur, repeat: Infinity, delay: b.delay, ease: 'easeInOut' }}
-          style={{ position: 'absolute', left: b.x + '%', top: b.y + '%', width: b.size, height: b.size }}
-          className="rounded-full border border-cyan-500/10">
-            <div className="w-full h-full rounded-full"
-              style={{ background: 'radial-gradient(circle at 30% 30%, rgba(0,212,255,0.04), transparent 70%)' }} />
-          </motion.div>
-      ))}
-      <div className="absolute inset-0 grid-bg opacity-100" />
-      <div className="absolute top-0 left-1/4 w-96 h-96 rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(0,212,255,0.04) 0%, transparent 70%)', filter: 'blur(40px)' }} />
-      <div className="absolute bottom-0 right-1/4 w-96 h-96 rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.05) 0%, transparent 70%)', filter: 'blur(40px)' }} />
-    </div>
+    <svg width={72} height={24} viewBox="0 0 72 24">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5}
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
-// ---- Ticker Tape ----
-function TickerTape({ quotes }: { quotes: Record<string, Quote> }) {
-  const items = Object.entries(quotes).slice(0, 12);
-  if (items.length === 0) return null;
+// -- Badge --------------------------------------------------------------------
+function Badge({ dp }: { dp: number | undefined }) {
+  const v = safeN(dp);
+  const up = v >= 0;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 2,
+      padding: '2px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+      background: up ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+      color: up ? UP_COLOR : DOWN_COLOR,
+      fontFamily: 'DM Mono, monospace',
+    }}>
+      {up ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+      {up ? '+' : ''}{v.toFixed(2)}%
+    </span>
+  );
+}
+
+// -- Ticker tape --------------------------------------------------------------â”€
+function Ticker({ quotes }: { quotes: Record<string, Quote> }) {
+  const items = Object.entries(quotes);
+  if (!items.length) return null;
   const tape = [...items, ...items];
   return (
-    <div className="overflow-hidden border-b border-[#0f2040] bg-[#040810]/80 backdrop-blur-xl py-1.5 shrink-0">
-      <div className="ticker-tape flex gap-8 w-max px-4">
+    <div style={{ overflow: 'hidden', borderBottom: '1px solid #1a2035', background: '#0a0a0f', padding: '6px 0', flexShrink: 0 }}>
+      <div className="ticker" style={{ display: 'flex', gap: 40, width: 'max-content', paddingLeft: 16 }}>
         {tape.map(([sym, q], i) => (
-          <div key={i} className="flex items-center gap-2 shrink-0">
-            <span className="text-xs font-bold text-cyan-400 mono">{sym.replace('NSE:', '')}</span>
-            <span className="text-xs font-semibold mono text-white">${n(q?.c).toFixed(2)}</span>
-            <span className={"text-xs mono font-medium " + (n(q?.dp) >= 0 ? "text-emerald-400" : "text-red-400")}>
-              {n(q?.dp) >= 0 ? '+' : ''}{n(q?.dp).toFixed(2)}%
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>
+              {sym.replace('NSE:', '')}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>
+              ${fmtPrice(q?.c)}
+            </span>
+            <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: safeN(q?.dp) >= 0 ? UP_COLOR : DOWN_COLOR }}>
+              {safeN(q?.dp) >= 0 ? '+' : ''}{fmtPrice(q?.dp)}%
             </span>
           </div>
         ))}
@@ -94,208 +111,182 @@ function TickerTape({ quotes }: { quotes: Record<string, Quote> }) {
   );
 }
 
-// ---- Sparkline ----
-function Sparkline({ data, up }: { data: number[]; up: boolean }) {
-  if (data.length < 2) return <div className="w-20 h-5" />;
-  const min = Math.min(...data), max = Math.max(...data), range = max - min || 1;
-  const pts = data.map((v, i) =>
-    `${(i / (data.length - 1)) * 80},${18 - ((v - min) / range) * 16}`
-  ).join(' ');
-  return (
-    <svg width={80} height={20} viewBox="0 0 80 20" className="overflow-visible">
-      <polyline points={pts} fill="none" stroke={up ? '#00e676' : '#ff1744'}
-        strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-// ---- Price Chip ----
-function PriceChip({ dp }: { dp: number | null | undefined }) {
-  const val = n(dp);
-  const up = val >= 0;
-  return (
-    <span className={"inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-xs font-bold mono " +
-      (up ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400")}>
-      {up ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-      {up ? '+' : ''}{val.toFixed(2)}%
-    </span>
-  );
-}
-
-// ---- Chart ----
-function StockChart({ candles, symbol, quote }: { candles: Candle[]; symbol: string; quote: Quote | null }) {
+// -- Chart --------------------------------------------------------------------
+function PriceChart({ candles, symbol, quote }: { candles: Candle[]; symbol: string; quote: Quote | null }) {
   const [range, setRange] = useState<'1W' | '1M' | '3M' | '6M' | '1Y'>('3M');
-  const [type, setType] = useState<'area' | 'bars'>('area');
-
   const days = { '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }[range];
   const data = candles.slice(-days).map(c => ({
-    date: fmtDate(c.t), price: c.c, open: c.o, high: c.h, low: c.l,
-    vol: Math.round(c.v / 1000),
+    date: fmtDate(c.t), price: c.c, vol: Math.round(c.v / 1e6 * 10) / 10,
   }));
-
-  const first = data[0]?.price ?? 0;
-  const last = data[data.length - 1]?.price ?? 0;
+  const first = safeN(data[0]?.price), last = safeN(data[data.length - 1]?.price);
   const up = last >= first;
-  const color = up ? '#00e676' : '#ff1744';
+  const color = up ? UP_COLOR : DOWN_COLOR;
   const gradId = 'g' + symbol.replace(/[^a-z]/gi, '');
+  const pct = first ? ((last - first) / first * 100) : 0;
 
   return (
-    <div className="glow-border rounded-2xl bg-[#080f1e] p-5">
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div className="flex items-center gap-3 flex-wrap">
+    <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 28, fontWeight: 700, color: '#fff', fontFamily: 'DM Mono, monospace' }}>
+              ${fmtPrice(quote?.c)}
+            </span>
+            {quote && <Badge dp={quote.dp} />}
+            <span style={{ fontSize: 12, color: up ? UP_COLOR : DOWN_COLOR, fontFamily: 'DM Mono, monospace' }}>
+              {up ? '+' : ''}{pct.toFixed(2)}% ({range})
+            </span>
+          </div>
           {quote && (
-            <>
-              <span className="text-3xl font-black mono text-white">${n(quote.c).toFixed(2)}</span>
-              <PriceChip dp={quote.dp} />
-              <span className={"text-sm mono " + (n(quote.d) >= 0 ? "text-emerald-400" : "text-red-400")}>
-                {n(quote.d) >= 0 ? '+' : ''}{n(quote.d).toFixed(2)} today
-              </span>
-            </>
+            <div style={{ display: 'flex', gap: 20, marginTop: 8 }}>
+              {[['O', quote.o], ['H', quote.h], ['L', quote.l], ['Prev', quote.pc]].map(([l, v]) => (
+                <span key={l as string} style={{ fontSize: 11, color: '#64748b' }}>
+                  <span style={{ color: '#475569', marginRight: 4 }}>{l}</span>
+                  <span style={{ fontFamily: 'DM Mono, monospace' }}>${fmtPrice(v)}</span>
+                </span>
+              ))}
+            </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex bg-[#040810] rounded-xl p-1 border border-[#0f2040]">
-            {(['1W', '1M', '3M', '6M', '1Y'] as const).map(r => (
-              <button key={r} onClick={() => setRange(r)}
-                className={"px-2.5 py-1 rounded-lg text-xs font-bold transition-all " +
-                  (range === r ? "bg-cyan-500/20 text-cyan-400" : "text-[#4a6080] hover:text-white")}>
-                {r}
-              </button>
-            ))}
-          </div>
-          <div className="flex bg-[#040810] rounded-xl p-1 border border-[#0f2040]">
-            {(['area', 'bars'] as const).map(t => (
-              <button key={t} onClick={() => setType(t)}
-                className={"px-2.5 py-1 rounded-lg text-xs font-bold capitalize transition-all " +
-                  (type === t ? "bg-cyan-500/20 text-cyan-400" : "text-[#4a6080] hover:text-white")}>
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {quote && (
-        <div className="grid grid-cols-4 gap-3 mb-5">
-          {[
-            { label: 'Open', value: '$' + n(quote.o).toFixed(2) },
-            { label: 'High', value: '$' + n(quote.h).toFixed(2) },
-            { label: 'Low', value: '$' + n(quote.l).toFixed(2) },
-            { label: 'Prev Close', value: '$' + n(quote.pc).toFixed(2) },
-          ].map(({ label, value }) => (
-            <div key={label} className="bg-[#040810] rounded-xl p-3 border border-[#0f2040]">
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">{label}</p>
-              <p className="text-sm font-bold mono text-white mt-0.5">{value}</p>
-            </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {(['1W', '1M', '3M', '6M', '1Y'] as const).map(r => (
+            <button key={r} onClick={() => setRange(r)}
+              style={{
+                padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                background: range === r ? BLUE : 'transparent',
+                color: range === r ? '#fff' : '#64748b',
+                border: range === r ? 'none' : '1px solid #1a2035',
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}>
+              {r}
+            </button>
           ))}
         </div>
-      )}
-
-      <div className="h-60 min-w-0">
+      </div>
+      <div style={{ height: 220, minWidth: 0 }}>
         <ResponsiveContainer width="100%" height="100%">
-          {type === 'bars' ? (
-            <ComposedChart data={data}>
-              <defs>
-                <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={color} stopOpacity={0.3} />
-                  <stop offset="100%" stopColor={color} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="#0f2040" strokeDasharray="3 6" />
-              <XAxis dataKey="date" stroke="#0f2040" tick={{ fill: '#4a6080', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-              <YAxis stroke="#0f2040" tick={{ fill: '#4a6080', fontSize: 10, fontFamily: 'JetBrains Mono' }} domain={['auto', 'auto']} />
-              <Tooltip contentStyle={{ background: '#080f1e', border: '1px solid #1a3060', borderRadius: '12px', fontSize: '11px', fontFamily: 'JetBrains Mono' }} labelStyle={{ color: '#4a6080' }} />
-              <Bar dataKey="vol" yAxisId={0} fill="#0f2040" barSize={4} radius={[2, 2, 0, 0]} />
-              <Area yAxisId={0} type="monotone" dataKey="price" stroke={color} fill={'url(#' + gradId + ')'} strokeWidth={2} dot={false} />
-            </ComposedChart>
-          ) : (
-            <AreaChart data={data}>
-              <defs>
-                <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={color} stopOpacity={0.25} />
-                  <stop offset="100%" stopColor={color} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="#0f2040" strokeDasharray="3 6" />
-              <XAxis dataKey="date" stroke="#0f2040" tick={{ fill: '#4a6080', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-              <YAxis stroke="#0f2040" tick={{ fill: '#4a6080', fontSize: 10, fontFamily: 'JetBrains Mono' }} domain={['auto', 'auto']} />
-              <Tooltip
-                contentStyle={{ background: '#080f1e', border: '1px solid #1a3060', borderRadius: '12px', fontSize: '11px', fontFamily: 'JetBrains Mono' }}
-                labelStyle={{ color: '#4a6080' }}
-                formatter={(v: unknown) => ['$' + n(v as number).toFixed(2), 'Price']}
-              />
-              <Area type="monotone" dataKey="price" stroke={color} fill={'url(#' + gradId + ')'} strokeWidth={2} dot={false} />
-            </AreaChart>
-          )}
+          <AreaChart data={data}>
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity={0.2} />
+                <stop offset="100%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke="#1a2035" strokeDasharray="4 8" />
+            <XAxis dataKey="date" stroke="transparent" tick={{ fill: '#475569', fontSize: 10, fontFamily: 'DM Mono, monospace' }} />
+            <YAxis stroke="transparent" tick={{ fill: '#475569', fontSize: 10, fontFamily: 'DM Mono, monospace' }} domain={['auto', 'auto']} width={60} />
+            <Tooltip
+              contentStyle={{ background: '#0f1221', border: '1px solid #1a2035', borderRadius: 8, fontSize: 12, fontFamily: 'DM Mono, monospace' }}
+              labelStyle={{ color: '#64748b' }}
+              formatter={(v: unknown) => ['$' + fmtPrice(v), 'Price']}
+            />
+            <Area type="monotone" dataKey="price" stroke={color} fill={'url(#' + gradId + ')'} strokeWidth={2} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{ height: 60, minWidth: 0, marginTop: 4 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data}>
+            <XAxis dataKey="date" hide />
+            <YAxis hide />
+            <Bar dataKey="vol" fill="#1e2535" radius={[2, 2, 0, 0]} />
+          </BarChart>
         </ResponsiveContainer>
       </div>
     </div>
   );
 }
 
-// ---- Fundamentals ----
-function FundamentalsPanel({ symbol }: { symbol: string }) {
-  const [fund, setFund] = useState<Fundamentals | null>(null);
+// -- About / fundamentals ----------------------------------------------------
+function AboutPanel({ symbol }: { symbol: string }) {
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [earnings, setEarnings] = useState<EarningsItem[]>([]);
+  const [recs, setRecs] = useState<RecommendationItem[]>([]);
 
   useEffect(() => {
-    getFundamentals(symbol).then(setFund);
+    setProfile(null); setMetrics(null); setEarnings([]); setRecs([]);
+    getProfile(symbol).then(setProfile);
     getMetrics(symbol).then(setMetrics);
     getEarnings(symbol).then(setEarnings);
+    getRecommendations(symbol).then(setRecs);
   }, [symbol]);
 
-  const rows = [
-    { label: 'P/E', value: fmt(metrics?.peNormalizedAnnual) },
-    { label: 'EPS', value: fmt(metrics?.epsNormalizedAnnual, '$') },
-    { label: 'P/B', value: fmt(metrics?.pbAnnual) },
-    { label: 'Beta', value: fmt(metrics?.beta) },
-    { label: '52W H', value: fmt(metrics?.weekHigh52, '$') },
-    { label: '52W L', value: fmt(metrics?.weekLow52, '$') },
-    { label: 'ROE', value: fmt(metrics?.roeRfy, '', '%') },
-    { label: 'Div Yield', value: metrics?.dividendYieldIndicatedAnnual ? n(metrics.dividendYieldIndicatedAnnual).toFixed(2) + '%' : 'â€”' },
-    { label: 'Mkt Cap', value: fmt(metrics?.marketCapitalization ? metrics.marketCapitalization * 1e6 : 0, '$') },
-    { label: 'D/E', value: fmt(metrics?.debtEquityAnnual) },
+  const stats = [
+    { label: 'P/E Ratio', value: metrics?.peNormalizedAnnual?.toFixed(1) ?? 'â€”' },
+    { label: 'EPS (TTM)', value: metrics?.epsNormalizedAnnual ? '$' + metrics.epsNormalizedAnnual.toFixed(2) : 'â€”' },
+    { label: 'Market Cap', value: metrics?.marketCapitalization ? fmtBig(metrics.marketCapitalization * 1e6, '$') : 'â€”' },
+    { label: '52W High', value: metrics?.weekHigh52 ? '$' + safeN(metrics.weekHigh52).toFixed(2) : 'â€”' },
+    { label: '52W Low', value: metrics?.weekLow52 ? '$' + safeN(metrics.weekLow52).toFixed(2) : 'â€”' },
+    { label: 'Beta', value: metrics?.beta?.toFixed(2) ?? 'â€”' },
+    { label: 'ROE', value: metrics?.roeRfy ? safeN(metrics.roeRfy).toFixed(1) + '%' : 'â€”' },
+    { label: 'Div Yield', value: metrics?.dividendYieldIndicatedAnnual ? safeN(metrics.dividendYieldIndicatedAnnual).toFixed(2) + '%' : 'â€”' },
+    { label: 'P/B', value: metrics?.pbAnnual?.toFixed(2) ?? 'â€”' },
+    { label: 'D/E', value: metrics?.debtEquityAnnual?.toFixed(2) ?? 'â€”' },
   ];
 
+  const latest = recs[0];
+  const total = latest ? (latest.buy + latest.hold + latest.sell + latest.strongBuy + latest.strongSell) || 1 : 1;
+  const buyPct = latest ? Math.round((latest.buy + latest.strongBuy) / total * 100) : 0;
+  const holdPct = latest ? Math.round(latest.hold / total * 100) : 0;
+  const sellPct = latest ? Math.round((latest.sell + latest.strongSell) / total * 100) : 0;
+
   return (
-    <div className="glow-border rounded-2xl bg-[#080f1e] p-5 space-y-4">
-      {fund && (
-        <div className="flex items-center gap-3">
-          {fund.logo && (
-            <img src={fund.logo} alt={fund.name}
-              className="w-9 h-9 rounded-xl object-contain bg-white/5 p-1 border border-[#0f2040]" />
+    <div className="card" style={{ padding: 20 }}>
+      {profile && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #1a2035' }}>
+          {profile.logo && (
+            <img src={profile.logo} alt={profile.name}
+              style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'contain', background: '#fff', padding: 3 }} />
           )}
-          <div>
-            <p className="text-sm font-bold text-white">{fund.name}</p>
-            <p className="text-xs text-[#4a6080]">{fund.exchange} | {fund.industry}</p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>{profile.finnhubIndustry} Â· {profile.exchange}</div>
           </div>
-          {fund.weburl && (
-            <a href={fund.weburl} target="_blank" rel="noopener noreferrer"
-              className="ml-auto text-xs text-cyan-400 hover:text-cyan-300 transition-colors">
-              Visit site
-            </a>
+          {profile.weburl && (
+            <a href={profile.weburl} target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: 11, color: BLUE, textDecoration: 'none' }}>Website â†—</a>
           )}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-2">
-        {rows.map(({ label, value }) => (
-          <div key={label} className="bg-[#040810] rounded-xl px-3 py-2 border border-[#0f2040]">
-            <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">{label}</p>
-            <p className="text-sm font-bold mono text-white mt-0.5">{value}</p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+        {stats.map(({ label, value }) => (
+          <div key={label} style={{ background: '#080b14', borderRadius: 8, padding: '8px 12px' }}>
+            <div style={{ fontSize: 10, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>{value}</div>
           </div>
         ))}
       </div>
+
+      {latest && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Analyst Ratings ({latest.period})</div>
+          <div style={{ display: 'flex', borderRadius: 4, overflow: 'hidden', height: 6, marginBottom: 6 }}>
+            <div style={{ width: buyPct + '%', background: UP_COLOR }} />
+            <div style={{ width: holdPct + '%', background: '#f59e0b' }} />
+            <div style={{ width: sellPct + '%', background: DOWN_COLOR }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+            <span style={{ color: UP_COLOR }}>Buy {buyPct}%</span>
+            <span style={{ color: '#f59e0b' }}>Hold {holdPct}%</span>
+            <span style={{ color: DOWN_COLOR }}>Sell {sellPct}%</span>
+          </div>
+        </div>
+      )}
+
       {earnings.length > 0 && (
         <div>
-          <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-2">EPS History</p>
-          <div className="h-28 min-w-0">
+          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>EPS History</div>
+          <div style={{ height: 90, minWidth: 0 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={earnings.slice(0, 6).reverse()}>
-                <XAxis dataKey="date" tick={{ fill: '#4a6080', fontSize: 9, fontFamily: 'JetBrains Mono' }} stroke="#0f2040" />
-                <Tooltip contentStyle={{ background: '#080f1e', border: '1px solid #1a3060', borderRadius: '10px', fontSize: '10px' }} />
-                <Bar dataKey="epsActual" fill="#00d4ff" radius={[3, 3, 0, 0]} name="Actual" />
-                <Bar dataKey="epsEstimate" fill="#0f2040" radius={[3, 3, 0, 0]} name="Estimate" />
+              <BarChart data={earnings.slice(0, 6).reverse().map(e => ({
+                q: `Q${e.quarter} ${e.year}`, actual: e.epsActual, estimate: e.epsEstimate,
+              }))}>
+                <XAxis dataKey="q" tick={{ fill: '#475569', fontSize: 9 }} stroke="transparent" />
+                <Tooltip contentStyle={{ background: '#0f1221', border: '1px solid #1a2035', borderRadius: 8, fontSize: 11 }} />
+                <Bar dataKey="actual" fill={BLUE} radius={[3, 3, 0, 0]} name="Actual" />
+                <Bar dataKey="estimate" fill="#1e2535" radius={[3, 3, 0, 0]} name="Estimate" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -305,140 +296,138 @@ function FundamentalsPanel({ symbol }: { symbol: string }) {
   );
 }
 
-// ---- Claude AI Panel ----
+// -- Claude AI ----------------------------------------------------------------â”€
 function ClaudePanel({ symbol, quote, metrics }: { symbol: string; quote: Quote | null; metrics: Metrics | null }) {
-  const { claudeApiKey, setClaudeApiKey } = useStore();
+  const { claudeKey, setClaudeKey } = useStore();
   const [analysis, setAnalysis] = useState('');
   const [loading, setLoading] = useState(false);
-  const [keyInput, setKeyInput] = useState(claudeApiKey);
-  const [showKey, setShowKey] = useState(false);
+  const [keyInput, setKeyInput] = useState(claudeKey);
+  const [editing, setEditing] = useState(false);
 
-  const analyze = async () => {
-    if (!claudeApiKey || !quote) return;
-    setLoading(true);
-    setAnalysis('');
-    const result = await getClaudeAnalysis(claudeApiKey, symbol, quote, metrics);
-    setAnalysis(result);
-    setLoading(false);
+  const run = async () => {
+    if (!claudeKey || !quote) return;
+    setLoading(true); setAnalysis('');
+    const r = await getClaudeAnalysis(claudeKey, symbol, quote, metrics);
+    setAnalysis(r); setLoading(false);
   };
 
-  const saveKey = () => { setClaudeApiKey(keyInput); setShowKey(false); };
-
   return (
-    <div className="glow-border rounded-2xl bg-[#080f1e] p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-bold text-[#4a6080] uppercase tracking-widest flex items-center gap-2">
-          <Brain size={13} className="text-violet-400" /> Claude AI Analysis
-        </h3>
-        <button onClick={() => setShowKey(!showKey)}
-          className="text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors">
-          {claudeApiKey ? 'Change key' : 'Add API key'}
+    <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Brain size={15} color="#7c3aed" />
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>Claude AI Analysis</span>
+        </div>
+        <button onClick={() => setEditing(!editing)}
+          style={{ fontSize: 11, color: BLUE, background: 'none', border: 'none', cursor: 'pointer' }}>
+          {claudeKey ? 'Change key' : 'Add API key'}
         </button>
       </div>
 
-      <AnimatePresence>
-        {showKey && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-            <div className="space-y-2">
-              <p className="text-[10px] text-[#4a6080]">Enter your Anthropic API key. Stored locally, never sent to our servers.</p>
-              <input
-                type="password"
-                value={keyInput}
-                onChange={e => setKeyInput(e.target.value)}
-                placeholder="sk-ant-..."
-                className="w-full bg-[#040810] border border-[#0f2040] rounded-xl px-3 py-2 text-xs text-white mono outline-none focus:border-cyan-500/50 transition-colors"
-              />
-              <div className="flex gap-2">
-                <button onClick={saveKey}
-                  className="flex-1 py-1.5 bg-violet-600/30 border border-violet-500/30 rounded-xl text-xs text-violet-300 font-bold hover:bg-violet-600/50 transition-colors">
-                  Save Key
-                </button>
-                <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"
-                  className="flex-1 py-1.5 bg-[#040810] border border-[#0f2040] rounded-xl text-xs text-[#4a6080] text-center hover:text-white transition-colors">
-                  Get API Key
-                </a>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {!claudeApiKey && !showKey && (
-        <div className="bg-[#040810] border border-violet-500/20 rounded-xl p-4 text-center">
-          <Brain size={24} className="text-violet-400 mx-auto mb-2 opacity-50" />
-          <p className="text-xs text-[#4a6080]">Add your Claude API key to get AI-powered stock analysis</p>
+      {editing && (
+        <div style={{ marginBottom: 14 }}>
+          <p style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+            Your Anthropic API key. Stored in your browser, never on our servers.
+          </p>
+          <input type="password" value={keyInput} onChange={e => setKeyInput(e.target.value)}
+            placeholder="sk-ant-..."
+            style={{ width: '100%', background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box' }} />
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button onClick={() => { setClaudeKey(keyInput); setEditing(false); }}
+              style={{ flex: 1, padding: '7px 0', background: '#7c3aed', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              Save
+            </button>
+            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"
+              style={{ flex: 1, padding: '7px 0', background: '#1a2035', border: 'none', borderRadius: 8, color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', textAlign: 'center', display: 'block' }}>
+              Get key â†—
+            </a>
+          </div>
         </div>
       )}
 
-      {claudeApiKey && !showKey && (
-        <button onClick={analyze} disabled={loading || !quote}
-          className="w-full py-2.5 bg-gradient-to-r from-violet-600/30 to-cyan-600/30 border border-violet-500/30 rounded-xl text-sm font-bold text-white hover:border-violet-400/50 transition-all disabled:opacity-40 flex items-center justify-center gap-2">
-          {loading ? (
-            <><RefreshCw size={14} className="animate-spin" /> Analyzing {symbol}...</>
-          ) : (
-            <><Zap size={14} className="text-yellow-400" /> Analyze {symbol} with Claude</>
-          )}
+      {!claudeKey && !editing ? (
+        <div style={{ textAlign: 'center', padding: '20px 0', color: '#475569', fontSize: 13 }}>
+          <Brain size={28} color="#1e2535" style={{ margin: '0 auto 8px' }} />
+          <p>Add your Claude API key to get AI stock analysis</p>
+        </div>
+      ) : claudeKey && !editing && (
+        <button onClick={run} disabled={loading || !quote}
+          style={{
+            width: '100%', padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
+            background: loading ? '#1a2035' : 'linear-gradient(135deg, #7c3aed, #3b82f6)',
+            color: '#fff', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', gap: 8, opacity: loading || !quote ? 0.7 : 1,
+          }}>
+          {loading ? <><RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> Analyzing...</> : <><Zap size={13} /> Analyze {symbol}</>}
         </button>
       )}
 
       {analysis && (
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-[#040810] border border-[#0f2040] rounded-xl p-4">
-          <p className="text-xs text-white leading-relaxed whitespace-pre-wrap">{analysis}</p>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          style={{ marginTop: 12, padding: '12px 14px', background: '#080b14', borderRadius: 8, border: '1px solid #1a2035' }}>
+          <p style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.7 }}>{analysis}</p>
         </motion.div>
       )}
     </div>
   );
 }
 
-// ---- News Feed ----
-function NewsFeed({ symbol }: { symbol?: string }) {
+// -- News ----------------------------------------------------------------------
+function NewsPanel({ symbol }: { symbol?: string }) {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'positive' | 'negative' | 'neutral'>('all');
+  const [filter, setFilter] = useState<'all' | 'positive' | 'negative'>('all');
 
   useEffect(() => {
     setLoading(true);
     getNews(symbol).then(d => { setNews(d); setLoading(false); });
   }, [symbol]);
 
-  const filtered = filter === 'all' ? news : news.filter(n => n.sentiment === filter);
-
-  const SIcon = ({ s }: { s?: string }) => {
-    if (s === 'positive') return <ArrowUpRight size={11} className="text-emerald-400 shrink-0" />;
-    if (s === 'negative') return <ArrowDownRight size={11} className="text-red-400 shrink-0" />;
-    return <Info size={11} className="text-cyan-400 shrink-0" />;
-  };
+  const shown = filter === 'all' ? news : news.filter(n => n.sentiment === filter);
 
   return (
-    <div className="glow-border rounded-2xl bg-[#080f1e] p-5">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-bold text-[#4a6080] uppercase tracking-widest flex items-center gap-2">
-          <Newspaper size={12} /> {symbol ? symbol + ' News' : 'Market News'}
-        </h3>
-        <div className="flex gap-1">
+    <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>
+          {symbol ? symbol.replace('NSE:', '') + ' News' : 'Market News'}
+        </span>
+        <div style={{ display: 'flex', gap: 4 }}>
           {(['all', 'positive', 'negative'] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
-              className={"px-2 py-0.5 rounded-lg text-[10px] font-bold capitalize transition-all " +
-                (filter === f ? (f === 'positive' ? 'bg-emerald-500/20 text-emerald-400' : f === 'negative' ? 'bg-red-500/20 text-red-400' : 'bg-cyan-500/20 text-cyan-400') : 'text-[#4a6080] hover:text-white')}>
+              style={{
+                padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                border: 'none', textTransform: 'capitalize',
+                background: filter === f ? (f === 'positive' ? 'rgba(34,197,94,0.15)' : f === 'negative' ? 'rgba(239,68,68,0.15)' : '#1a2035') : 'transparent',
+                color: filter === f ? (f === 'positive' ? UP_COLOR : f === 'negative' ? DOWN_COLOR : '#94a3b8') : '#475569',
+              }}>
               {f}
             </button>
           ))}
         </div>
       </div>
       {loading ? (
-        <div className="space-y-2">
-          {[1, 2, 3].map(i => <div key={i} className="animate-pulse h-10 bg-[#040810] rounded-xl" />)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 52, borderRadius: 8 }} />)}
         </div>
       ) : (
-        <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-          {filtered.map(item => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 360, overflowY: 'auto' }}>
+          {shown.map(item => (
             <a key={item.id} href={item.url} target="_blank" rel="noopener noreferrer"
-              className="flex items-start gap-2 p-2.5 rounded-xl hover:bg-[#040810] border border-transparent hover:border-[#0f2040] transition-all block">
-              <SIcon s={item.sentiment} />
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-200 leading-snug line-clamp-2">{item.headline}</p>
-                <p className="text-[10px] text-[#4a6080] mt-0.5 mono">{item.source} | {timeAgo(item.datetime)}</p>
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 8px', borderRadius: 8, textDecoration: 'none', transition: 'background 0.1s' }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#0f1221')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              <div style={{ marginTop: 2, flexShrink: 0 }}>
+                {item.sentiment === 'positive' ? <ArrowUpRight size={13} color={UP_COLOR} /> :
+                  item.sentiment === 'negative' ? <ArrowDownRight size={13} color={DOWN_COLOR} /> :
+                    <div style={{ width: 13, height: 13, borderRadius: '50%', background: '#1e2535' }} />}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 12, fontWeight: 500, color: '#cbd5e1', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  {item.headline}
+                </p>
+                <p style={{ fontSize: 10, color: '#475569', marginTop: 2, fontFamily: 'DM Mono, monospace' }}>
+                  {item.source} Â· {timeAgo(item.datetime)}
+                </p>
               </div>
             </a>
           ))}
@@ -448,79 +437,86 @@ function NewsFeed({ symbol }: { symbol?: string }) {
   );
 }
 
-// ---- Watchlist ----
+// -- Watchlist ----------------------------------------------------------------â”€
 function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void; selected: string }) {
-  const { watchlist, addToWatchlist, removeFromWatchlist } = useStore();
+  const { watchlist, addWatch, removeWatch } = useStore();
   const [input, setInput] = useState('');
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
-  const [history, setHistory] = useState<Record<string, number[]>>({});
+  const [hist, setHist] = useState<Record<string, number[]>>({});
 
-  const loadQuote = useCallback((symbol: string) => {
-    getQuote(symbol).then(q => {
-      setQuotes(prev => ({ ...prev, [symbol]: q }));
-      setHistory(prev => {
-        const h = [...(prev[symbol] || []), q.c].slice(-20);
-        return { ...prev, [symbol]: h };
-      });
+  const loadQ = useCallback((sym: string) => {
+    getQuote(sym).then(q => {
+      setQuotes(p => ({ ...p, [sym]: q }));
+      setHist(p => { const h = [...(p[sym] || []), safeN(q.c)].slice(-20); return { ...p, [sym]: h }; });
     });
   }, []);
 
   useEffect(() => {
-    watchlist.forEach(({ symbol }) => loadQuote(symbol));
-    const t = setInterval(() => watchlist.forEach(({ symbol }) => loadQuote(symbol)), 15000);
+    watchlist.forEach(({ symbol }) => loadQ(symbol));
+    const t = setInterval(() => watchlist.forEach(({ symbol }) => loadQ(symbol)), 20000);
     return () => clearInterval(t);
-  }, [watchlist, loadQuote]);
-
-  const handleAdd = () => {
-    const sym = input.trim().toUpperCase();
-    if (sym) { addToWatchlist({ symbol: sym, name: sym }); setInput(''); }
-  };
+  }, [watchlist, loadQ]);
 
   return (
-    <div className="glow-border rounded-2xl bg-[#080f1e] p-5">
-      <h3 className="text-xs font-bold text-[#4a6080] uppercase tracking-widest mb-3 flex items-center gap-2">
-        <Star size={12} className="text-amber-400" /> Watchlist
-      </h3>
-      <div className="flex gap-2 mb-3">
-        <input value={input} onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+    <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Star size={14} color="#f59e0b" />
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>Watchlist</span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <input value={input} onChange={e => setInput(e.target.value.toUpperCase())}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && input.trim()) {
+              addWatch({ symbol: input.trim(), name: input.trim() });
+              setInput('');
+            }
+          }}
           placeholder="Add symbol..." maxLength={15}
-          className="flex-1 bg-[#040810] border border-[#0f2040] rounded-xl px-3 py-1.5 text-xs mono text-white placeholder-[#4a6080] outline-none focus:border-cyan-500/50 uppercase transition-colors" />
-        <button onClick={handleAdd}
-          className="p-2 bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 rounded-xl transition-colors">
-          <Plus size={13} className="text-cyan-400" />
+          style={{ flex: 1, background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '7px 12px', fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none' }} />
+        <button onClick={() => { if (input.trim()) { addWatch({ symbol: input.trim(), name: input.trim() }); setInput(''); } }}
+          style={{ padding: '7px 12px', background: BLUE, border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+          <Plus size={14} />
         </button>
       </div>
-      <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 320, overflowY: 'auto' }}>
         {watchlist.map(({ symbol, name }) => {
           const q = quotes[symbol];
-          const up = n(q?.dp) >= 0;
-          const hist = history[symbol] || [];
+          const up = safeN(q?.dp) >= 0;
+          const h = hist[symbol] || [safeN(q?.pc), safeN(q?.c)];
           return (
-            <motion.div key={symbol} onClick={() => onSelect(symbol)}
-              whileHover={{ x: 2 }}
-              className={"flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-all border " +
-                (selected === symbol ? "bg-cyan-500/5 border-cyan-500/20" : "hover:bg-[#040810] border-transparent hover:border-[#0f2040]")}>
+            <div key={symbol} onClick={() => onSelect(symbol)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 10px', borderRadius: 8, cursor: 'pointer', transition: 'background 0.1s',
+                background: selected === symbol ? 'rgba(59,130,246,0.08)' : 'transparent',
+                border: '1px solid ' + (selected === symbol ? 'rgba(59,130,246,0.2)' : 'transparent'),
+              }}
+              onMouseEnter={e => { if (selected !== symbol) e.currentTarget.style.background = '#0f1221'; }}
+              onMouseLeave={e => { if (selected !== symbol) e.currentTarget.style.background = 'transparent'; }}>
               <div>
-                <p className={"text-xs font-bold mono " + (selected === symbol ? "text-cyan-400" : "text-white")}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: selected === symbol ? BLUE : '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>
                   {symbol.replace('NSE:', '')}
-                </p>
-                <p className="text-[10px] text-[#4a6080]">{name}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Sparkline data={hist.length > 1 ? hist : [n(q?.pc), n(q?.c)]} up={up} />
-                <div className="text-right min-w-[64px]">
-                  <p className="text-xs font-bold mono text-white">${n(q?.c).toFixed(2)}</p>
-                  <p className={"text-[10px] mono font-semibold " + (up ? "text-emerald-400" : "text-red-400")}>
-                    {up ? '+' : ''}{n(q?.dp).toFixed(2)}%
-                  </p>
                 </div>
-                <button onClick={e => { e.stopPropagation(); removeFromWatchlist(symbol); }}
-                  className="text-[#4a6080] hover:text-red-400 transition-colors ml-1">
-                  <Trash2 size={11} />
+                <div style={{ fontSize: 10, color: '#475569' }}>{name}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Spark data={h} up={up} />
+                <div style={{ textAlign: 'right', minWidth: 64 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>
+                    ${fmtPrice(q?.c)}
+                  </div>
+                  <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: up ? UP_COLOR : DOWN_COLOR }}>
+                    {up ? '+' : ''}{fmtPrice(q?.dp)}%
+                  </div>
+                </div>
+                <button onClick={e => { e.stopPropagation(); removeWatch(symbol); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1e2535', padding: 2 }}
+                  onMouseEnter={e => (e.currentTarget.style.color = DOWN_COLOR)}
+                  onMouseLeave={e => (e.currentTarget.style.color = '#1e2535')}>
+                  <Trash2 size={12} />
                 </button>
               </div>
-            </motion.div>
+            </div>
           );
         })}
       </div>
@@ -528,72 +524,51 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
   );
 }
 
-// ---- Alerts ----
-function AlertsPanel({ currentPrices }: { currentPrices: Record<string, number> }) {
-  const { alerts, addAlert, removeAlert, toggleAlert, triggerAlert } = useStore();
+// -- Alerts --------------------------------------------------------------------
+function AlertsPanel() {
+  const { alerts, addAlert, removeAlert, toggleAlert } = useStore();
   const [sym, setSym] = useState('');
   const [cond, setCond] = useState<'above' | 'below'>('above');
   const [price, setPrice] = useState('');
-  const [triggered, setTriggered] = useState<string[]>([]);
-
-  useEffect(() => {
-    alerts.forEach(a => {
-      if (!a.active || a.triggered) return;
-      const current = currentPrices[a.symbol];
-      if (!current) return;
-      const hit = a.condition === 'above' ? current >= a.price : current <= a.price;
-      if (hit && !triggered.includes(a.id)) {
-        setTriggered(prev => [...prev, a.id]);
-        triggerAlert(a.id);
-      }
-    });
-  }, [currentPrices, alerts, triggered, triggerAlert]);
-
-  const handleAdd = () => {
-    if (!sym || !price) return;
-    addAlert({ symbol: sym.toUpperCase(), condition: cond, price: parseFloat(price), active: true });
-    setSym(''); setPrice('');
-  };
 
   return (
-    <div className="glow-border rounded-2xl bg-[#080f1e] p-5">
-      <h3 className="text-xs font-bold text-[#4a6080] uppercase tracking-widest mb-3 flex items-center gap-2">
-        <Bell size={12} className="text-amber-400" /> Price Alerts
-      </h3>
-      <div className="space-y-2 mb-3">
-        <input value={sym} onChange={e => setSym(e.target.value)} placeholder="Symbol"
-          className="w-full bg-[#040810] border border-[#0f2040] rounded-xl px-3 py-1.5 text-xs mono text-white placeholder-[#4a6080] outline-none focus:border-cyan-500/50 uppercase transition-colors" />
-        <div className="flex gap-2">
+    <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Bell size={14} color="#f59e0b" />
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>Price Alerts</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+        <input value={sym} onChange={e => setSym(e.target.value.toUpperCase())} placeholder="Symbol"
+          style={{ background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '7px 12px', fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none' }} />
+        <div style={{ display: 'flex', gap: 8 }}>
           <select value={cond} onChange={e => setCond(e.target.value as 'above' | 'below')}
-            className="flex-1 bg-[#040810] border border-[#0f2040] rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-cyan-500/50">
+            style={{ flex: 1, background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '7px 10px', fontSize: 12, color: '#e8eaf0', outline: 'none' }}>
             <option value="above">Above</option>
             <option value="below">Below</option>
           </select>
-          <input value={price} onChange={e => setPrice(e.target.value)} placeholder="$0.00" type="number"
-            className="flex-1 bg-[#040810] border border-[#0f2040] rounded-xl px-3 py-1.5 text-xs mono text-white placeholder-[#4a6080] outline-none focus:border-cyan-500/50 transition-colors" />
+          <input value={price} onChange={e => setPrice(e.target.value)} placeholder="Price" type="number"
+            style={{ flex: 1, background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '7px 12px', fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none' }} />
         </div>
-        <button onClick={handleAdd}
-          className="w-full py-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs font-bold text-amber-400 hover:bg-amber-500/20 transition-colors flex items-center justify-center gap-2">
-          <Plus size={12} /> Set Alert
+        <button onClick={() => { if (sym && price) { addAlert({ symbol: sym, condition: cond, price: parseFloat(price), active: true }); setSym(''); setPrice(''); } }}
+          style={{ padding: '8px 0', background: '#1a2035', border: '1px solid #252d45', borderRadius: 8, color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+          + Set Alert
         </button>
       </div>
-      <div className="space-y-1.5 max-h-48 overflow-y-auto">
-        {alerts.length === 0 && <p className="text-[10px] text-[#4a6080] text-center py-3">No alerts set</p>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+        {alerts.length === 0 && <p style={{ fontSize: 12, color: '#475569', textAlign: 'center', padding: '12px 0' }}>No alerts set</p>}
         {alerts.map(a => (
-          <div key={a.id}
-            className={"flex items-center justify-between rounded-xl px-3 py-2 border " +
-              (a.triggered ? "bg-amber-500/5 border-amber-500/20" : "bg-[#040810] border-[#0f2040]")}>
-            <div className="flex items-center gap-2">
-              <button onClick={() => toggleAlert(a.id)}>
-                {a.triggered ? <AlertTriangle size={13} className="text-amber-400" /> :
-                  a.active ? <CheckCircle size={13} className="text-emerald-400" /> :
-                    <CheckCircle size={13} className="text-[#4a6080]" />}
+          <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: '#080b14', borderRadius: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => toggleAlert(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                {a.triggered ? <AlertTriangle size={14} color="#f59e0b" /> : a.active ? <CheckCircle size={14} color={UP_COLOR} /> : <CheckCircle size={14} color="#1e2535" />}
               </button>
-              <span className="text-xs font-bold mono text-white">{a.symbol}</span>
-              <span className="text-[10px] text-[#4a6080] mono">{a.condition} ${a.price}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>{a.symbol}</span>
+              <span style={{ fontSize: 11, color: '#475569', fontFamily: 'DM Mono, monospace' }}>{a.condition} ${a.price}</span>
             </div>
-            <button onClick={() => removeAlert(a.id)} className="text-[#4a6080] hover:text-red-400 transition-colors">
-              <Trash2 size={11} />
+            <button onClick={() => removeAlert(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1e2535' }}
+              onMouseEnter={e => (e.currentTarget.style.color = DOWN_COLOR)}
+              onMouseLeave={e => (e.currentTarget.style.color = '#1e2535')}>
+              <Trash2 size={12} />
             </button>
           </div>
         ))}
@@ -602,87 +577,161 @@ function AlertsPanel({ currentPrices }: { currentPrices: Record<string, number> 
   );
 }
 
-// ---- Portfolio ----
-function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
-  const { portfolio, balance, removePosition } = useStore();
-  const totalValue = portfolio.reduce((s, p) => s + n(p.currentPrice || p.avgPrice) * n(p.quantity), 0);
-  const totalCost = portfolio.reduce((s, p) => s + n(p.avgPrice) * n(p.quantity), 0);
-  const totalPnl = totalValue - totalCost;
-  const totalPnlPct = totalCost ? (totalPnl / totalCost) * 100 : 0;
+// -- Markets grid --------------------------------------------------------------
+function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
+  const { market, setMarket } = useStore();
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+  const [loading, setLoading] = useState(true);
 
-  const pnlHistory = Array.from({ length: 30 }, (_, i) => ({
-    day: 'D' + (i + 1),
-    value: Math.max(0, (totalValue || 100000) * (0.88 + i * 0.004 + (Math.random() - 0.5) * 0.02)),
-  }));
+  useEffect(() => {
+    setLoading(true);
+    setQuotes({});
+    const stocks = market === 'india' ? INDIA_STOCKS : market === 'crypto' ? CRYPTO_LIST.map(c => ({ ...c, sector: 'Crypto' })) : US_STOCKS;
+    const fn = market === 'crypto' ? getCryptoQuote : getQuote;
+    Promise.all(stocks.map(({ symbol }) =>
+      fn(symbol).then(q => [symbol, q] as const)
+    )).then(results => {
+      const map: Record<string, Quote> = {};
+      results.forEach(([s, q]) => { map[s] = q; });
+      setQuotes(map);
+      setLoading(false);
+    });
+  }, [market]);
+
+  const stocks = market === 'india' ? INDIA_STOCKS : market === 'crypto' ? CRYPTO_LIST.map(c => ({ ...c, sector: 'Crypto' })) : US_STOCKS;
 
   return (
-    <div className="space-y-5 max-w-5xl">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Globe size={14} color="#64748b" />
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>Markets</span>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {(['us', 'india', 'crypto'] as const).map(m => (
+            <button key={m} onClick={() => setMarket(m)}
+              style={{
+                padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                background: market === m ? BLUE : 'transparent',
+                color: market === m ? '#fff' : '#64748b',
+                border: market === m ? 'none' : '1px solid #1a2035',
+                textTransform: 'uppercase',
+              }}>
+              {m === 'us' ? 'US' : m === 'india' ? 'IN' : 'Crypto'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        {loading
+          ? Array.from({ length: 8 }, (_, i) => <div key={i} className="skeleton" style={{ height: 60, borderRadius: 8 }} />)
+          : stocks.map(({ symbol, name }) => {
+            const q = quotes[symbol];
+            const up = safeN(q?.dp) >= 0;
+            const hist = [safeN(q?.pc) * 0.99, safeN(q?.pc), safeN(q?.o), safeN(q?.l), safeN(q?.c)];
+            return (
+              <div key={symbol} onClick={() => onSelect(symbol)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: '#080b14',
+                  border: '1px solid transparent', transition: 'border-color 0.15s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = '#252d45')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', marginBottom: 2 }}>
+                    {symbol.replace('NSE:', '')}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Spark data={hist} up={up} />
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>${fmtPrice(q?.c)}</div>
+                    <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: up ? UP_COLOR : DOWN_COLOR }}>
+                      {up ? '+' : ''}{fmtPrice(q?.dp)}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+      </div>
+    </div>
+  );
+}
+
+// -- Portfolio ----------------------------------------------------------------â”€
+function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
+  const { portfolio, balance, removePosition } = useStore();
+  const totalVal = portfolio.reduce((s, p) => s + safeN(p.currentPrice || p.avgPrice) * safeN(p.quantity), 0);
+  const totalCost = portfolio.reduce((s, p) => s + safeN(p.avgPrice) * safeN(p.quantity), 0);
+  const pnl = totalVal - totalCost;
+  const pnlPct = totalCost ? (pnl / totalCost * 100) : 0;
+  const alloc = portfolio.map(p => ({ name: p.symbol, value: safeN(p.currentPrice || p.avgPrice) * safeN(p.quantity) }));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         {[
-          { label: 'Total Value', value: '$' + (totalValue + balance).toLocaleString(undefined, { maximumFractionDigits: 0 }), sub: 'Portfolio + Cash' },
-          { label: 'Invested', value: '$' + totalCost.toFixed(0), sub: portfolio.length + ' positions' },
-          { label: 'Total P&L', value: (totalPnl >= 0 ? '+$' : '-$') + Math.abs(totalPnl).toFixed(0), sub: n(totalPnlPct).toFixed(2) + '%', color: totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400' },
+          { label: 'Total Value', value: '$' + (totalVal + balance).toLocaleString(undefined, { maximumFractionDigits: 0 }), sub: 'Portfolio + Cash' },
+          { label: 'Invested', value: '$' + totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 }), sub: portfolio.length + ' positions' },
+          { label: 'P&L', value: (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(0), color: pnl >= 0 ? UP_COLOR : DOWN_COLOR, sub: fmtPrice(pnlPct) + '%' },
           { label: 'Cash', value: '$' + balance.toLocaleString(undefined, { maximumFractionDigits: 0 }), sub: 'Available' },
         ].map(({ label, value, sub, color }) => (
-          <div key={label} className="glow-border rounded-2xl bg-[#080f1e] p-5">
-            <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-2">{label}</p>
-            <p className={"text-2xl font-black mono " + (color || "text-white")}>{value}</p>
-            <p className="text-[10px] text-[#4a6080] mt-1">{sub}</p>
+          <div key={label} className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 11, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{label}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: color || '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>{value}</div>
+            <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>{sub}</div>
           </div>
         ))}
       </div>
-
-      <div className="glow-border rounded-2xl bg-[#080f1e] p-5">
-        <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-4">30-Day Portfolio Performance</p>
-        <div className="h-36 min-w-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={pnlHistory}>
-              <defs>
-                <linearGradient id="portGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00d4ff" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#00d4ff" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="day" stroke="#0f2040" tick={{ fill: '#4a6080', fontSize: 9 }} />
-              <YAxis stroke="#0f2040" tick={{ fill: '#4a6080', fontSize: 9 }} domain={['auto', 'auto']} />
-              <Tooltip contentStyle={{ background: '#080f1e', border: '1px solid #1a3060', borderRadius: '10px', fontSize: '11px' }} />
-              <Area type="monotone" dataKey="value" stroke="#00d4ff" fill="url(#portGrad)" strokeWidth={2} dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="glow-border rounded-2xl bg-[#080f1e] p-5">
-        <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-4">Positions</p>
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', marginBottom: 14 }}>Positions</div>
         {portfolio.length === 0 ? (
-          <div className="text-center py-10">
-            <BarChart2 size={32} className="text-[#0f2040] mx-auto mb-3" />
-            <p className="text-sm text-[#4a6080]">No positions yet. Search for a symbol to get started.</p>
+          <div style={{ textAlign: 'center', padding: '40px 0', color: '#475569' }}>
+            <p style={{ fontSize: 14 }}>No positions yet</p>
+            <p style={{ fontSize: 12, marginTop: 4 }}>Search a symbol to start tracking</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 80px 80px 24px', gap: 8, padding: '0 10px', marginBottom: 4 }}>
+              {['Symbol', 'Shares', 'Avg Price', 'Value', 'P&L', ''].map(h => (
+                <span key={h} style={{ fontSize: 10, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
+              ))}
+            </div>
             {portfolio.map(p => {
-              const cur = p.currentPrice || p.avgPrice || 0;
-              const cost = p.avgPrice || 0;
-              const qty = p.quantity || 0;
-              const pnl = (cur - cost) * qty;
-              const pct = cost ? ((cur - cost) / cost) * 100 : 0;
+              const cur = safeN(p.currentPrice || p.avgPrice);
+              const cost = safeN(p.avgPrice);
+              const qty = safeN(p.quantity);
+              const val = cur * qty;
+              const pl = (cur - cost) * qty;
+              const plPct = cost ? ((cur - cost) / cost * 100) : 0;
               return (
                 <div key={p.symbol} onClick={() => onSelect(p.symbol)}
-                  className="flex items-center justify-between bg-[#040810] rounded-2xl p-4 cursor-pointer hover:border-cyan-500/20 border border-[#0f2040] transition-all">
+                  style={{
+                    display: 'grid', gridTemplateColumns: '1fr 80px 80px 80px 80px 24px',
+                    gap: 8, padding: '10px', borderRadius: 8, cursor: 'pointer', background: '#080b14',
+                    alignItems: 'center', border: '1px solid transparent',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = '#1a2035')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}>
                   <div>
-                    <p className="text-sm font-bold mono text-white">{p.symbol}</p>
-                    <p className="text-xs text-[#4a6080]">{qty} shares @ ${cost.toFixed(2)}</p>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>{p.symbol}</div>
+                    <div style={{ fontSize: 11, color: '#475569' }}>{p.name}</div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold mono text-white">${(cur * qty).toFixed(2)}</p>
-                    <p className={"text-xs mono font-semibold " + (pnl >= 0 ? "text-emerald-400" : "text-red-400")}>
-                      {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} ({n(pct).toFixed(2)}%)
-                    </p>
+                  <div style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>{qty}</div>
+                  <div style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>${cost.toFixed(2)}</div>
+                  <div style={{ fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>${val.toFixed(2)}</div>
+                  <div style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: pl >= 0 ? UP_COLOR : DOWN_COLOR, fontWeight: 600 }}>
+                    {pl >= 0 ? '+' : ''}{pl.toFixed(2)}<br />
+                    <span style={{ fontSize: 10 }}>({fmtPrice(plPct)}%)</span>
                   </div>
                   <button onClick={e => { e.stopPropagation(); removePosition(p.symbol); }}
-                    className="ml-4 text-[#4a6080] hover:text-red-400 transition-colors">
-                    <Trash2 size={14} />
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1e2535', padding: 2 }}
+                    onMouseEnter={e => (e.currentTarget.style.color = DOWN_COLOR)}
+                    onMouseLeave={e => (e.currentTarget.style.color = '#1e2535')}>
+                    <Trash2 size={13} />
                   </button>
                 </div>
               );
@@ -694,148 +743,70 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
   );
 }
 
-// ---- Markets Grid ----
-function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
-  const { marketTab, setMarketTab } = useStore();
-  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const stocks = marketTab === 'india' ? INDIAN_STOCKS : marketTab === 'crypto' ? CRYPTO_LIST.map(c => ({ ...c, sector: 'Crypto' })) : US_STOCKS;
-    setLoading(true);
-    setQuotes({});
-    const fn = marketTab === 'crypto' ? getCryptoQuote : getQuote;
-    Promise.all(stocks.map(({ symbol }) => fn(symbol).then(q => [symbol, q] as const))).then(results => {
-      const map: Record<string, Quote> = {};
-      results.forEach(([s, q]) => { map[s] = q; });
-      setQuotes(map);
-      setLoading(false);
-    });
-  }, [marketTab]);
-
-  const tabs = [
-    { id: 'us', label: 'US', flag: 'US' },
-    { id: 'india', label: 'India', flag: 'IN' },
-    { id: 'crypto', label: 'Crypto', flag: 'BTC' },
-  ] as const;
-
-  return (
-    <div className="glow-border rounded-2xl bg-[#080f1e] p-5">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-xs font-bold text-[#4a6080] uppercase tracking-widest flex items-center gap-2">
-          <Globe size={12} /> Markets
-        </h3>
-        <div className="flex gap-1">
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setMarketTab(t.id)}
-              className={"px-3 py-1.5 rounded-xl text-xs font-bold transition-all " +
-                (marketTab === t.id ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30" : "text-[#4a6080] hover:text-white border border-transparent")}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
-        {loading ? (
-          Array.from({ length: 6 }, (_, i) => (
-            <div key={i} className="animate-pulse h-12 bg-[#040810] rounded-xl" />
-          ))
-        ) : (
-          (marketTab === 'india' ? INDIAN_STOCKS : marketTab === 'crypto' ? CRYPTO_LIST.map(c => ({ ...c, sector: 'Crypto' })) : US_STOCKS).map(({ symbol, name }) => {
-            const q = quotes[symbol];
-            const up = n(q?.dp) >= 0;
-            const hist = [n(q?.pc) * 0.99, n(q?.pc), n(q?.o), n(q?.l), n(q?.c)];
-            return (
-              <motion.div key={symbol} onClick={() => onSelect(symbol)}
-                whileHover={{ x: 3 }}
-                className="flex items-center justify-between px-3 py-2.5 bg-[#040810] rounded-xl cursor-pointer hover:bg-[#0a1428] border border-transparent hover:border-[#0f2040] transition-all">
-                <div className="flex items-center gap-3">
-                  <div className={"w-1.5 h-8 rounded-full " + (up ? "bg-emerald-500" : "bg-red-500")} />
-                  <div>
-                    <p className="text-xs font-bold mono text-white">{symbol.replace('NSE:', '')}</p>
-                    <p className="text-[10px] text-[#4a6080]">{name}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <Sparkline data={hist} up={up} />
-                  <div className="text-right min-w-[80px]">
-                    <p className="text-xs font-bold mono text-white">${n(q?.c).toFixed(n(q?.c) > 100 ? 2 : 4)}</p>
-                    <p className={"text-[10px] mono font-semibold " + (up ? "text-emerald-400" : "text-red-400")}>
-                      {up ? '+' : ''}{n(q?.dp).toFixed(2)}%
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ---- Screener ----
+// -- Screener ------------------------------------------------------------------
 function ScreenerPage({ onSelect }: { onSelect: (s: string) => void }) {
-  const [query, setQuery] = useState('');
+  const [q, setQ] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (query.length < 2) { setResults([]); return; }
-    setSearching(true);
-    const t = setTimeout(() => {
-      searchSymbol(query).then(r => { setResults(r); setSearching(false); });
-    }, 400);
+    if (q.length < 2) { setResults([]); return; }
+    setLoading(true);
+    const t = setTimeout(() => { searchSymbol(q).then(r => { setResults(r); setLoading(false); }); }, 400);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [q]);
 
   const presets = [
-    { label: 'Magnificent 7', symbols: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'] },
-    { label: 'Indian Blue Chips', symbols: ['NSE:RELIANCE', 'NSE:TCS', 'NSE:HDFCBANK', 'NSE:INFY'] },
-    { label: 'Crypto Top', symbols: ['BTC', 'ETH', 'SOL', 'BNB'] },
-    { label: 'Dividend Kings', symbols: ['JNJ', 'PG', 'KO', 'MMM'] },
-    { label: 'EV & Clean Energy', symbols: ['TSLA', 'RIVN', 'NIO', 'ENPH'] },
-    { label: 'AI Plays', symbols: ['NVDA', 'MSFT', 'GOOGL', 'AMD', 'PLTR'] },
+    { label: 'Magnificent 7', syms: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'] },
+    { label: 'Indian Blue Chips', syms: ['NSE:RELIANCE', 'NSE:TCS', 'NSE:HDFCBANK', 'NSE:INFY'] },
+    { label: 'Crypto Top 5', syms: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP'] },
+    { label: 'Finance Leaders', syms: ['JPM', 'BAC', 'GS', 'MS', 'WFC'] },
+    { label: 'AI Plays', syms: ['NVDA', 'MSFT', 'GOOGL', 'AMD', 'PLTR', 'C3.AI'] },
+    { label: 'EV & Clean Energy', syms: ['TSLA', 'RIVN', 'NIO', 'ENPH', 'FSLR'] },
+    { label: 'Indian IT', syms: ['NSE:TCS', 'NSE:INFY', 'NSE:WIPRO', 'NSE:HCLTECH'] },
+    { label: 'Dividend Kings', syms: ['JNJ', 'PG', 'KO', 'MMM', 'CL'] },
   ];
 
   return (
-    <div className="space-y-5 max-w-4xl">
-      <div className="glow-border rounded-2xl bg-[#080f1e] p-5">
-        <h3 className="text-xs font-bold text-[#4a6080] uppercase tracking-widest mb-4 flex items-center gap-2">
-          <Filter size={12} /> Symbol Search
-        </h3>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#4a6080] w-4 h-4" />
-          <input value={query} onChange={e => setQuery(e.target.value)}
-            placeholder="Search any stock, ETF, index..."
-            className="w-full bg-[#040810] border border-[#0f2040] rounded-xl pl-10 pr-4 py-3 text-sm mono text-white placeholder-[#4a6080] outline-none focus:border-cyan-500/50 transition-colors uppercase" />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', marginBottom: 14 }}>Symbol Search</div>
+        <div style={{ position: 'relative', marginBottom: 12 }}>
+          <Search size={15} color="#475569" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+          <input value={q} onChange={e => setQ(e.target.value.toUpperCase())}
+            placeholder="Search stocks, ETFs, indices..."
+            style={{ width: '100%', background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '10px 12px 10px 38px', fontSize: 13, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box' }} />
         </div>
-        {searching && <p className="text-xs text-cyan-400 mt-2 mono">Searching...</p>}
+        {loading && <p style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: '8px 0' }}>Searching...</p>}
         {results.length > 0 && (
-          <div className="mt-3 space-y-1.5">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {results.map(r => (
               <div key={r.symbol} onClick={() => onSelect(r.symbol)}
-                className="flex items-center justify-between px-4 py-3 bg-[#040810] rounded-xl cursor-pointer hover:bg-[#0a1428] border border-[#0f2040] hover:border-cyan-500/20 transition-all">
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: '#080b14', border: '1px solid #1a2035' }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = BLUE + '40')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = '#1a2035')}>
                 <div>
-                  <span className="text-sm font-bold mono text-cyan-400">{r.symbol}</span>
-                  <span className="text-xs text-[#4a6080] ml-3">{r.description}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: BLUE, fontFamily: 'DM Mono, monospace' }}>{r.symbol}</span>
+                  <span style={{ fontSize: 12, color: '#64748b', marginLeft: 10 }}>{r.description}</span>
                 </div>
-                <span className="text-[10px] text-[#4a6080] bg-[#0f2040] px-2 py-1 rounded-lg mono">{r.type}</span>
+                <span style={{ fontSize: 10, color: '#475569', background: '#1a2035', padding: '3px 8px', borderRadius: 4 }}>{r.type}</span>
               </div>
             ))}
           </div>
         )}
       </div>
-      <div className="glow-border rounded-2xl bg-[#080f1e] p-5">
-        <h3 className="text-xs font-bold text-[#4a6080] uppercase tracking-widest mb-4">Preset Watchlists</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="card" style={{ padding: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', marginBottom: 14 }}>Preset Screens</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {presets.map(p => (
-            <div key={p.label} className="bg-[#040810] border border-[#0f2040] rounded-2xl p-4 hover:border-cyan-500/20 transition-all">
-              <p className="text-sm font-bold text-white mb-2">{p.label}</p>
-              <div className="flex flex-wrap gap-1.5">
-                {p.symbols.map(s => (
+            <div key={p.label} style={{ background: '#080b14', border: '1px solid #1a2035', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#e8eaf0', marginBottom: 8 }}>{p.label}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {p.syms.map(s => (
                   <button key={s} onClick={() => onSelect(s)}
-                    className="px-2 py-1 bg-[#0f2040] hover:bg-cyan-500/10 hover:text-cyan-400 rounded-lg text-[10px] mono text-[#4a6080] transition-colors">
+                    style={{ padding: '4px 10px', background: '#111420', border: '1px solid #1a2035', borderRadius: 20, fontSize: 11, color: '#64748b', cursor: 'pointer', fontFamily: 'DM Mono, monospace', transition: 'all 0.15s' }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = BLUE; e.currentTarget.style.color = BLUE; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#1a2035'; e.currentTarget.style.color = '#64748b'; }}>
                     {s.replace('NSE:', '')}
                   </button>
                 ))}
@@ -848,198 +819,165 @@ function ScreenerPage({ onSelect }: { onSelect: (s: string) => void }) {
   );
 }
 
-// ---- Settings ----
+// -- Settings ------------------------------------------------------------------
 function SettingsPage() {
-  const { theme, toggleTheme, claudeApiKey, setClaudeApiKey } = useStore();
-  const [keyInput, setKeyInput] = useState(claudeApiKey);
-  const [loading, setLoading] = useState(false);
+  const { claudeKey, setClaudeKey } = useStore();
+  const [k, setK] = useState(claudeKey);
   const [saved, setSaved] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
 
-  const saveKey = () => { setClaudeApiKey(keyInput); setSaved(true); setTimeout(() => setSaved(false), 2000); };
-
-  const handleUpgrade = async () => {
-    setLoading(true);
+  const upgrade = async () => {
+    setUpgrading(true);
     try {
-      const res = await fetch('/api/checkout', { method: 'POST' });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-    } catch { alert('Payment unavailable. Try again later.'); }
-    finally { setLoading(false); }
+      const r = await fetch('/api/checkout', { method: 'POST' });
+      const d = await r.json();
+      if (d.url) window.location.href = d.url;
+    } catch { alert('Payment unavailable.'); }
+    finally { setUpgrading(false); }
   };
 
   return (
-    <div className="space-y-5 max-w-2xl">
-      <div className="glow-border rounded-2xl bg-[#080f1e] p-5 space-y-4">
-        <h3 className="text-xs font-bold text-[#4a6080] uppercase tracking-widest flex items-center gap-2">
-          <Brain size={12} className="text-violet-400" /> Claude AI Integration
-        </h3>
-        <p className="text-xs text-[#4a6080]">
-          Connect your own Anthropic API key to get AI-powered stock analysis directly in the dashboard.
-          Your key is stored locally and never sent to our servers.
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 600 }}>
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <Brain size={16} color="#7c3aed" />
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0' }}>Claude AI Integration</span>
+        </div>
+        <p style={{ fontSize: 12, color: '#64748b', lineHeight: 1.6, marginBottom: 14 }}>
+          Connect your Anthropic API key to get real-time AI analysis for any stock directly in the dashboard. Your key is stored only in your browser.
         </p>
-        <input type="password" value={keyInput} onChange={e => setKeyInput(e.target.value)}
+        <input type="password" value={k} onChange={e => setK(e.target.value)}
           placeholder="sk-ant-api03-..."
-          className="w-full bg-[#040810] border border-[#0f2040] rounded-xl px-3 py-2.5 text-sm mono text-white placeholder-[#4a6080] outline-none focus:border-violet-500/50 transition-colors" />
-        <div className="flex gap-2">
-          <button onClick={saveKey}
-            className={"flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors " +
-              (saved ? "bg-emerald-500/20 border border-emerald-500/30 text-emerald-400" : "bg-violet-600/20 border border-violet-500/30 text-violet-300 hover:bg-violet-600/30")}>
-            {saved ? "Saved!" : "Save API Key"}
+          style={{ width: '100%', background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => { setClaudeKey(k); setSaved(true); setTimeout(() => setSaved(false), 2000); }}
+            style={{ flex: 1, padding: '9px 0', background: saved ? 'rgba(34,197,94,0.2)' : '#7c3aed', border: 'none', borderRadius: 8, color: saved ? UP_COLOR : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            {saved ? 'âœ“ Saved' : 'Save API Key'}
           </button>
           <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"
-            className="flex-1 py-2.5 bg-[#040810] border border-[#0f2040] rounded-xl text-sm text-center text-[#4a6080] hover:text-white transition-colors">
-            Get API Key
+            style={{ flex: 1, padding: '9px 0', background: '#1a2035', border: 'none', borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, textAlign: 'center', textDecoration: 'none', display: 'block' }}>
+            Get API Key â†—
           </a>
         </div>
-        {claudeApiKey && (
-          <div className="flex items-center gap-2 text-xs text-emerald-400">
-            <CheckCircle size={13} /> Claude AI is connected
+        {claudeKey && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 12, color: UP_COLOR }}>
+            <CheckCircle size={13} /> Claude AI connected
           </div>
         )}
       </div>
 
-      <div className="glow-border rounded-2xl bg-[#080f1e] p-5 space-y-4">
-        <h3 className="text-xs font-bold text-[#4a6080] uppercase tracking-widest flex items-center gap-2">
-          <Settings size={12} /> Preferences
-        </h3>
-        <div className="flex items-center justify-between py-2 border-b border-[#0f2040]">
-          <div>
-            <p className="text-sm font-semibold text-white">Theme</p>
-            <p className="text-xs text-[#4a6080]">Currently {theme} mode</p>
-          </div>
-          <button onClick={toggleTheme}
-            className="flex items-center gap-2 px-4 py-2 bg-[#040810] border border-[#0f2040] rounded-xl text-xs text-white hover:border-cyan-500/30 transition-colors">
-            {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
-            {theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
-          </button>
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0', marginBottom: 4 }}>StockPro Premium</div>
+        <p style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>Upgrade for real-time streaming, unlimited alerts, and priority Claude analysis.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+          {['Real-time quotes', 'Unlimited alerts', 'Options chain', 'CSV export', 'Advanced screener', 'Priority AI'].map(f => (
+            <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8' }}>
+              <CheckCircle size={12} color={UP_COLOR} /> {f}
+            </div>
+          ))}
         </div>
-        <div className="flex items-center justify-between py-2 border-b border-[#0f2040]">
-          <div>
-            <p className="text-sm font-semibold text-white">Data Source</p>
-            <p className="text-xs text-[#4a6080]">Finnhub API â€” real market data with mock fallback</p>
-          </div>
-          <a href="https://finnhub.io" target="_blank" rel="noopener noreferrer"
-            className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors">
-            Upgrade key
-          </a>
-        </div>
-        <div className="flex items-center justify-between py-2">
-          <div>
-            <p className="text-sm font-semibold text-white">Auto-refresh</p>
-            <p className="text-xs text-[#4a6080]">Quotes refresh every 15 seconds</p>
-          </div>
-          <span className="flex items-center gap-1.5 text-xs text-emerald-400 mono">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Active
-          </span>
-        </div>
+        <button onClick={upgrade} disabled={upgrading} className="btn-primary" style={{ width: '100%', padding: '10px 0' }}>
+          <CreditCard size={14} style={{ display: 'inline', marginRight: 6 }} />
+          {upgrading ? 'Redirecting...' : 'Upgrade â€” $19/month'}
+        </button>
       </div>
 
-      <div className="rounded-2xl p-5 space-y-4"
-        style={{ background: 'linear-gradient(135deg, rgba(0,212,255,0.08) 0%, rgba(124,58,237,0.08) 100%)', border: '1px solid rgba(0,212,255,0.15)' }}>
-        <div className="flex items-start gap-4">
-          <Zap size={22} className="text-cyan-400 mt-1 shrink-0" />
-          <div className="flex-1">
-            <h3 className="text-base font-black text-white mb-1">StockPro Premium</h3>
-            <p className="text-xs text-[#4a6080] mb-4">Real-time streaming, unlimited alerts, options data, and priority AI analysis.</p>
-            <div className="grid grid-cols-2 gap-1.5 mb-5">
-              {['WebSocket streaming', 'Unlimited alerts', 'Options chain', 'Advanced screener', 'Export to CSV', 'Priority support'].map(f => (
-                <div key={f} className="flex items-center gap-2 text-xs text-slate-300">
-                  <CheckCircle size={11} className="text-emerald-400 shrink-0" /> {f}
-                </div>
-              ))}
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0', marginBottom: 16 }}>Data Sources</div>
+        {[
+          { name: 'Finnhub', desc: 'Real-time quotes, fundamentals, news', status: 'Active', link: 'https://finnhub.io' },
+          { name: 'Anthropic Claude', desc: 'AI-powered stock analysis', status: claudeKey ? 'Connected' : 'Not connected', link: 'https://console.anthropic.com' },
+        ].map(({ name, desc, status, link }) => (
+          <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #1a2035' }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>{name}</div>
+              <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>{desc}</div>
             </div>
-            <button onClick={handleUpgrade} disabled={loading}
-              className="flex items-center gap-2 px-5 py-2.5 bg-cyan-500/20 border border-cyan-500/30 hover:bg-cyan-500/30 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-all">
-              <CreditCard size={14} /> {loading ? 'Redirecting...' : 'Upgrade â€” $19/mo'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 11, color: status === 'Active' || status === 'Connected' ? UP_COLOR : '#475569' }}>{status}</span>
+              <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: BLUE }}>Manage â†—</a>
+            </div>
           </div>
-        </div>
+        ))}
       </div>
     </div>
   );
 }
 
-// ---- Main Chart View ----
-function ChartView({ symbol }: { symbol: string }) {
+// -- Symbol view --------------------------------------------------------------â”€
+function SymbolView({ symbol }: { symbol: string }) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const { claudeApiKey } = useStore();
+  const [loading, setLoading] = useState(false);
 
   const load = useCallback(() => {
-    setRefreshing(true);
+    setLoading(true);
     Promise.all([
-      getQuote(symbol).then(q => { setQuote(q); return q; }),
-      getCandles(symbol, 'D', 365).then(c => {
-        setCandles(c.length > 5 ? c : generateMockCandles(150, 365));
-      }),
+      getQuote(symbol).then(setQuote),
+      getCandles(symbol, 'D', 365).then(c => setCandles(c.length > 10 ? c : mockCandles(symbol, 365))),
       getMetrics(symbol).then(setMetrics),
-    ]).finally(() => setRefreshing(false));
+    ]).finally(() => setLoading(false));
   }, [symbol]);
 
   useEffect(() => {
     load();
-    const t = setInterval(() => {
-      getQuote(symbol).then(setQuote);
-    }, 15000);
+    const t = setInterval(() => getQuote(symbol).then(setQuote), 15000);
     return () => clearInterval(t);
   }, [symbol, load]);
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-4 flex-wrap">
-          <h2 className="text-4xl font-black text-white tracking-tight mono">{symbol.replace('NSE:', '')}</h2>
-          {quote && <PriceChip dp={quote.dp} />}
-          <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-400/10 px-2.5 py-1 rounded-full border border-emerald-400/20 mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
-          </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', margin: 0 }}>
+            {symbol.replace('NSE:', '')}
+          </h1>
         </div>
-        <button onClick={load} disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 bg-[#080f1e] border border-[#0f2040] rounded-xl text-xs text-[#4a6080] hover:text-white hover:border-cyan-500/30 transition-all">
-          <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> Refresh
+        {quote && <Badge dp={quote.dp} />}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: UP_COLOR, background: 'rgba(34,197,94,0.08)', padding: '3px 10px', borderRadius: 20, border: '1px solid rgba(34,197,94,0.15)' }}>
+          <span className="live-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: UP_COLOR, display: 'inline-block' }} />
+          Live
+        </span>
+        <button onClick={load} disabled={loading}
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'transparent', border: '1px solid #1a2035', borderRadius: 8, color: '#64748b', fontSize: 12, cursor: 'pointer' }}>
+          <RefreshCw size={12} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+          Refresh
         </button>
       </div>
-
-      <StockChart candles={candles} symbol={symbol} quote={quote} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <FundamentalsPanel symbol={symbol} />
+      <PriceChart candles={candles} symbol={symbol} quote={quote} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <AboutPanel symbol={symbol} />
         <ClaudePanel symbol={symbol} quote={quote} metrics={metrics} />
       </div>
     </div>
   );
 }
 
-// ---- App Shell ----
-type Tab = 'dashboard' | 'portfolio' | 'watchlist' | 'screener' | 'settings';
+// -- App shell ----------------------------------------------------------------â”€
+type Tab = 'dashboard' | 'markets' | 'portfolio' | 'watchlist' | 'screener' | 'settings';
 
-export default function Home() {
-  const { isSignedIn, isLoaded } = useUser();
-  const { activeSymbol, setActiveSymbol, activeTab, setActiveTab, theme } = useStore();
+export default function App() {
+  const { isSignedIn, isLoaded, user } = useUser();
+  const { tab, setTab, symbol, setSymbol } = useStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [searchRes, setSearchRes] = useState<SearchResult[]>([]);
   const [showSearch, setShowSearch] = useState(false);
-  const [tickerQuotes, setTickerQuotes] = useState<Record<string, Quote>>({});
-  const [currentPrices, setCurrentPrices] = useState<Record<string, number>>({});
+  const [tickerQ, setTickerQ] = useState<Record<string, Quote>>({});
   const searchRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isSignedIn) return;
-    const tickerSymbols = ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'GOOGL', 'BTC', 'ETH', 'NSE:RELIANCE', 'NSE:TCS'];
-    const load = () => {
-      tickerSymbols.forEach(sym => {
-        const fn = ['BTC', 'ETH'].includes(sym) ? getCryptoQuote : getQuote;
-        fn(sym).then(q => {
-          setTickerQuotes(prev => ({ ...prev, [sym]: q }));
-          setCurrentPrices(prev => ({ ...prev, [sym]: q.c }));
-        });
+    const syms = ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'GOOGL', 'BTC', 'ETH'];
+    const loadTicker = () => {
+      syms.forEach(s => {
+        const fn = ['BTC', 'ETH'].includes(s) ? getCryptoQuote : getQuote;
+        fn(s).then(q => setTickerQ(p => ({ ...p, [s]: q })));
       });
     };
-    load();
-    const t = setInterval(load, 20000);
+    loadTicker();
+    const t = setInterval(loadTicker, 25000);
     return () => clearInterval(t);
   }, [isSignedIn]);
 
@@ -1051,224 +989,191 @@ export default function Home() {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowSearch(false);
-      }
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowSearch(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleSelect = (sym: string) => {
-    setActiveSymbol(sym);
-    setActiveTab('dashboard');
-    setSearchQ('');
-    setSearchRes([]);
-    setShowSearch(false);
-  };
+  const select = (s: string) => { setSymbol(s); setTab('dashboard'); setSearchQ(''); setSearchRes([]); setShowSearch(false); };
 
   const nav: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={15} /> },
-    { id: 'portfolio', label: 'Portfolio', icon: <Wallet size={15} /> },
-    { id: 'watchlist', label: 'Watchlist', icon: <Star size={15} /> },
-    { id: 'screener', label: 'Screener', icon: <Filter size={15} /> },
-    { id: 'settings', label: 'Settings', icon: <Settings size={15} /> },
+    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
+    { id: 'markets', label: 'Markets', icon: <Globe size={16} /> },
+    { id: 'portfolio', label: 'Portfolio', icon: <Wallet size={16} /> },
+    { id: 'watchlist', label: 'Watchlist', icon: <Star size={16} /> },
+    { id: 'screener', label: 'Screener', icon: <Filter size={16} /> },
+    { id: 'settings', label: 'Settings', icon: <Settings size={16} /> },
   ];
 
   if (!isLoaded) return (
-    <div className="h-screen flex items-center justify-center bg-[#040810]">
-      <BubbleBg />
-      <div className="relative z-10 flex flex-col items-center gap-4">
-        <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ repeat: Infinity, duration: 1.5 }}
-          className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center">
-          <TrendingUp size={26} className="text-white" />
+    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0f' }}>
+      <div style={{ textAlign: 'center' }}>
+        <motion.div animate={{ scale: [1, 1.08, 1] }} transition={{ repeat: Infinity, duration: 1.4 }}
+          style={{ width: 52, height: 52, background: BLUE, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+          <TrendingUp size={24} color="#fff" />
         </motion.div>
-        <p className="text-[#4a6080] text-sm mono">Initializing StockPro...</p>
+        <p style={{ color: '#475569', fontSize: 13, fontFamily: 'DM Mono, monospace' }}>Loading...</p>
       </div>
     </div>
   );
 
   if (!isSignedIn) return (
-    <div className="h-screen flex flex-col items-center justify-center bg-[#040810] px-4 relative">
-      <BubbleBg />
-      <div className="relative z-10 w-full max-w-sm">
-        <div className="mb-10 text-center">
-          <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-            className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center">
-              <TrendingUp size={28} className="text-white" />
-            </div>
-            <h1 className="text-5xl font-black text-white tracking-tight">StockPro</h1>
-          </motion.div>
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}
-            className="text-[#4a6080] text-sm mono">US | India | Crypto | AI Analysis</motion.p>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0f', padding: 16 }}>
+      <div style={{ marginBottom: 32, textAlign: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 10 }}>
+          <div style={{ width: 44, height: 44, background: BLUE, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <TrendingUp size={22} color="#fff" />
+          </div>
+          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#e8eaf0', margin: 0 }}>StockPro</h1>
         </div>
-        <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}
-          className="glow-border bg-[#080f1e] p-6 rounded-2xl">
-          <SignIn routing="hash" appearance={{
-            elements: {
-              formButtonPrimary: 'bg-gradient-to-r from-cyan-500 to-violet-600 hover:opacity-90 text-white w-full rounded-xl font-bold',
-              card: 'bg-transparent shadow-none',
-              headerTitle: 'text-white font-black',
-              headerSubtitle: 'text-[#4a6080]',
-              formFieldInput: 'bg-[#040810] border-[#0f2040] text-white rounded-xl',
-              footerActionLink: 'text-cyan-400 hover:text-cyan-300',
-            },
-          }} />
-        </motion.div>
+        <p style={{ color: '#475569', fontSize: 13 }}>Track US, India & Crypto markets with AI analysis</p>
+      </div>
+      <div style={{ background: '#0f1221', border: '1px solid #1a2035', borderRadius: 16, padding: 24, width: '100%', maxWidth: 380 }}>
+        <SignIn routing="hash" appearance={{
+          elements: {
+            formButtonPrimary: 'btn-primary',
+            card: 'bg-transparent shadow-none',
+            headerTitle: 'text-white',
+            headerSubtitle: 'text-slate-500',
+            formFieldInput: 'bg-[#080b14] border-[#1a2035] text-white',
+            footerActionLink: 'text-blue-500',
+          },
+        }} />
       </div>
     </div>
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#040810] relative">
-      <BubbleBg />
-
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#0a0a0f' }}>
       {/* Sidebar */}
       <motion.aside
-        animate={{ width: sidebarOpen ? 210 : 64 }}
+        animate={{ width: sidebarOpen ? 200 : 60 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="relative z-20 bg-[#040810]/95 backdrop-blur-xl border-r border-[#0f2040] flex flex-col py-5 overflow-hidden shrink-0"
-        style={{ boxShadow: '4px 0 30px rgba(0,0,0,0.5)' }}
-      >
-        <div className="flex items-center justify-between px-3 mb-8">
+        style={{ background: '#0a0a0f', borderRight: '1px solid #1a2035', display: 'flex', flexDirection: 'column', paddingTop: 16, paddingBottom: 16, flexShrink: 0, overflow: 'hidden', zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 14, paddingRight: 10, marginBottom: 24 }}>
           <AnimatePresence>
             {sidebarOpen && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-500 to-violet-600 flex items-center justify-center shrink-0">
-                  <TrendingUp size={15} className="text-white" />
+                style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 28, height: 28, background: BLUE, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <TrendingUp size={14} color="#fff" />
                 </div>
-                <span className="font-black text-white text-base tracking-tight whitespace-nowrap">StockPro</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: '#e8eaf0', whiteSpace: 'nowrap' }}>StockPro</span>
               </motion.div>
             )}
           </AnimatePresence>
           <button onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 hover:bg-[#080f1e] rounded-xl text-[#4a6080] transition-colors shrink-0">
-            {sidebarOpen ? <X size={14} /> : <Menu size={14} />}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: 4, borderRadius: 6, display: 'flex' }}>
+            {sidebarOpen ? <X size={15} /> : <Menu size={15} />}
           </button>
         </div>
 
-        <nav className="flex flex-col gap-0.5 px-2 flex-1">
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '0 8px' }}>
           {nav.map(({ id, label, icon }) => (
-            <button key={id} onClick={() => setActiveTab(id)}
-              className={"flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-semibold relative " +
-                (activeTab === id
-                  ? "text-cyan-400 bg-cyan-500/10 border border-cyan-500/20"
-                  : "text-[#4a6080] hover:text-white hover:bg-[#080f1e] border border-transparent")}>
-              <span className="shrink-0">{icon}</span>
+            <button key={id} onClick={() => setTab(id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8,
+                background: tab === id ? 'rgba(59,130,246,0.1)' : 'transparent',
+                color: tab === id ? BLUE : '#64748b',
+                border: tab === id ? '1px solid rgba(59,130,246,0.2)' : '1px solid transparent',
+                cursor: 'pointer', fontSize: 13, fontWeight: tab === id ? 600 : 400, textAlign: 'left',
+                transition: 'all 0.15s', width: '100%',
+              }}
+              onMouseEnter={e => { if (tab !== id) { e.currentTarget.style.background = '#0f1221'; e.currentTarget.style.color = '#94a3b8'; } }}
+              onMouseLeave={e => { if (tab !== id) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b'; } }}>
+              <span style={{ flexShrink: 0 }}>{icon}</span>
               <AnimatePresence>
                 {sidebarOpen && (
                   <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    className="whitespace-nowrap">{label}</motion.span>
+                    style={{ whiteSpace: 'nowrap' }}>{label}</motion.span>
                 )}
               </AnimatePresence>
-              {activeTab === id && (
-                <motion.div layoutId="activePill"
-                  className="absolute left-0 w-0.5 h-5 rounded-r-full bg-cyan-400"
-                  style={{ boxShadow: '0 0 8px rgba(0,212,255,0.8)' }} />
-              )}
             </button>
           ))}
-        </nav>
+        </div>
 
-        <div className="px-2 pt-4 border-t border-[#0f2040]">
-          <div className="flex items-center gap-3 px-2">
-            <UserButton afterSignOutUrl="/" />
+        <div style={{ padding: '12px 12px 0', borderTop: '1px solid #1a2035', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <UserButton afterSignOutUrl="/" />
+          <AnimatePresence>
+            {sidebarOpen && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#e8eaf0', whiteSpace: 'nowrap', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {user?.firstName || 'Trader'}
+                </div>
+                <div style={{ fontSize: 10, color: '#475569' }}>Free plan</div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.aside>
+
+      {/* Main */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Ticker quotes={tickerQ} />
+
+        {/* Header */}
+        <div style={{ borderBottom: '1px solid #1a2035', background: '#0a0a0f', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0', textTransform: 'capitalize' }}>
+            {tab === 'dashboard' ? symbol.replace('NSE:', '') : tab}
+          </div>
+          <div ref={searchRef} style={{ position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#0f1221', border: '1px solid #1a2035', borderRadius: 8, padding: '7px 12px', width: 220 }}>
+              <Search size={13} color="#475569" />
+              <input value={searchQ}
+                onChange={e => { setSearchQ(e.target.value.toUpperCase()); setShowSearch(true); }}
+                onFocus={() => setShowSearch(true)}
+                placeholder="Search symbol..."
+                style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', width: '100%' }} />
+            </div>
             <AnimatePresence>
-              {sidebarOpen && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <p className="text-xs font-bold text-white truncate max-w-[110px]">
-                    {useStore.getState().claudeApiKey ? 'ðŸ¤– AI Active' : 'Free Plan'}
-                  </p>
+              {showSearch && searchRes.length > 0 && (
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#0f1221', border: '1px solid #1a2035', borderRadius: 10, zIndex: 100, overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,0.6)', width: 280 }}>
+                  {searchRes.map(r => (
+                    <button key={r.symbol} onClick={() => select(r.symbol)}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '10px 14px', background: 'none', border: 'none', borderBottom: '1px solid #1a2035', cursor: 'pointer', textAlign: 'left' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#080b14')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                      <div>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: BLUE, fontFamily: 'DM Mono, monospace' }}>{r.symbol}</span>
+                        <span style={{ fontSize: 11, color: '#475569', marginLeft: 8, display: 'block', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description}</span>
+                      </div>
+                      <span style={{ fontSize: 10, color: '#475569', background: '#1a2035', padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>{r.type}</span>
+                    </button>
+                  ))}
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
         </div>
-      </motion.aside>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden relative z-10">
-        {/* Ticker tape */}
-        <TickerTape quotes={tickerQuotes} />
-
-        {/* Header */}
-        <header className="bg-[#040810]/80 backdrop-blur-xl border-b border-[#0f2040] px-6 py-3 flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-black text-white capitalize tracking-wide">{activeTab}</h2>
-            {activeTab === 'dashboard' && (
-              <span className="text-xs font-bold mono text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded-full border border-cyan-400/20">
-                {activeSymbol.replace('NSE:', '')}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <div ref={searchRef} className="relative">
-              <div className="flex items-center gap-2 bg-[#080f1e] border border-[#0f2040] focus-within:border-cyan-500/40 rounded-xl px-3 py-2 w-52 transition-colors">
-                <Search size={13} className="text-[#4a6080] shrink-0" />
-                <input value={searchQ}
-                  onChange={e => { setSearchQ(e.target.value.toUpperCase()); setShowSearch(true); }}
-                  onFocus={() => setShowSearch(true)}
-                  placeholder="Search symbol..."
-                  className="bg-transparent text-xs mono text-white placeholder-[#4a6080] outline-none w-full" />
-              </div>
-              <AnimatePresence>
-                {showSearch && searchRes.length > 0 && (
-                  <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
-                    className="absolute top-full mt-2 left-0 w-72 bg-[#080f1e] border border-[#1a3060] rounded-2xl shadow-2xl overflow-hidden z-50"
-                    style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.8)' }}>
-                    {searchRes.map(r => (
-                      <button key={r.symbol} onClick={() => handleSelect(r.symbol)}
-                        className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#0a1428] transition-colors text-left border-b border-[#0f2040] last:border-0">
-                        <div>
-                          <span className="text-xs font-black mono text-cyan-400">{r.symbol}</span>
-                          <span className="text-[10px] text-[#4a6080] ml-2 block truncate max-w-[150px]">{r.description}</span>
-                        </div>
-                        <span className="text-[10px] text-[#4a6080] bg-[#0f2040] px-2 py-0.5 rounded-lg mono shrink-0">{r.type}</span>
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-        </header>
-
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-6 relative">
+        {/* Content */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
           <AnimatePresence mode="wait">
-            <motion.div key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}>
-
-              {activeTab === 'dashboard' && (
-                <div className="grid grid-cols-1 xl:grid-cols-4 gap-5 max-w-[1800px] mx-auto">
-                  <div className="xl:col-span-3 space-y-5">
-                    <ChartView symbol={activeSymbol} />
-                    <MarketsGrid onSelect={handleSelect} />
-                    <NewsFeed symbol={activeSymbol} />
+            <motion.div key={tab + symbol}
+              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}>
+              {tab === 'dashboard' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16, maxWidth: 1600 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+                    <SymbolView symbol={symbol} />
+                    <NewsPanel symbol={symbol} />
                   </div>
-                  <div className="space-y-5">
-                    <WatchlistPanel onSelect={handleSelect} selected={activeSymbol} />
-                    <AlertsPanel currentPrices={currentPrices} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <WatchlistPanel onSelect={select} selected={symbol} />
+                    <AlertsPanel />
                   </div>
                 </div>
               )}
-              {activeTab === 'portfolio' && <PortfolioPage onSelect={handleSelect} />}
-              {activeTab === 'watchlist' && (
-                <div className="max-w-lg">
-                  <WatchlistPanel onSelect={sym => { handleSelect(sym); }} selected={activeSymbol} />
-                </div>
-              )}
-              {activeTab === 'screener' && <ScreenerPage onSelect={handleSelect} />}
-              {activeTab === 'settings' && <SettingsPage />}
-
+              {tab === 'markets' && <MarketsGrid onSelect={select} />}
+              {tab === 'portfolio' && <PortfolioPage onSelect={select} />}
+              {tab === 'watchlist' && <WatchlistPanel onSelect={select} selected={symbol} />}
+              {tab === 'screener' && <ScreenerPage onSelect={select} />}
+              {tab === 'settings' && <SettingsPage />}
             </motion.div>
           </AnimatePresence>
-        </main>
+        </div>
       </div>
     </div>
   );
