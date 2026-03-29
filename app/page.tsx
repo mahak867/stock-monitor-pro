@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useUser, UserButton, SignIn } from "@clerk/nextjs";
@@ -27,7 +27,7 @@ import {
 
 
 const fmt = (n: number | undefined, prefix = '') => {
-  if (n === undefined || n === null || isNaN(n)) return '—';
+  if (n === undefined || n === null || isNaN(n)) return 'â€”';
   if (Math.abs(n) >= 1e9) return prefix + (n / 1e9).toFixed(2) + 'B';
   if (Math.abs(n) >= 1e6) return prefix + (n / 1e6).toFixed(2) + 'M';
   return prefix + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -133,7 +133,7 @@ function CandlestickChart({ candles, symbol }: { candles: Candle[]; symbol: stri
               <Tooltip
                 contentStyle={{ background: '#0f1629', border: '1px solid #1a2444', borderRadius: '10px', fontSize: '11px' }}
                 labelStyle={{ color: '#94a3b8' }}
-                formatter={(v: number) => ['$' + v.toFixed(2), 'Price']}
+                formatter={(v: unknown) => ['$' + (v as number).toFixed(2), 'Price']}
               />
               <Area type="monotone" dataKey="price" stroke={color} fill={"url(#grad-" + symbol + ")"} strokeWidth={2} dot={false} />
             </AreaChart>
@@ -161,8 +161,8 @@ function FundamentalsPanel({ symbol }: { symbol: string }) {
     { label: '52W High', value: fmt(metrics?.weekHigh52, '$') },
     { label: '52W Low', value: fmt(metrics?.weekLow52, '$') },
     { label: 'Beta', value: fmt(metrics?.beta) },
-    { label: 'Div Yield', value: metrics?.dividendYieldIndicatedAnnual ? metrics.dividendYieldIndicatedAnnual.toFixed(2) + '%' : '—' },
-    { label: 'ROE', value: metrics?.roeRfy ? metrics.roeRfy.toFixed(1) + '%' : '—' },
+    { label: 'Div Yield', value: metrics?.dividendYieldIndicatedAnnual ? metrics.dividendYieldIndicatedAnnual.toFixed(2) + '%' : 'â€”' },
+    { label: 'ROE', value: metrics?.roeRfy ? metrics.roeRfy.toFixed(1) + '%' : 'â€”' },
   ];
 
   return (
@@ -228,7 +228,7 @@ function NewsFeed({ symbol }: { symbol?: string }) {
               <span className="mt-0.5 shrink-0">{sentimentIcon(item.sentiment)}</span>
               <div className="min-w-0">
                 <p className="text-xs font-medium text-slate-200 leading-snug line-clamp-2">{item.headline}</p>
-                <p className="text-[10px] text-[#5a6a8a] mt-0.5">{item.source} · {timeAgo(item.datetime)}</p>
+                <p className="text-[10px] text-[#5a6a8a] mt-0.5">{item.source} Â· {timeAgo(item.datetime)}</p>
               </div>
             </a>
           ))}
@@ -351,7 +351,7 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
               <div className="flex items-center gap-3">
                 <Sparkline data={sparkData(symbol)} color={isUp ? '#10b981' : '#ef4444'} />
                 <div className="text-right min-w-[60px]">
-                  <p className="text-xs font-semibold text-white">{q ? '$' + q.c.toFixed(2) : '—'}</p>
+                  <p className="text-xs font-semibold text-white">{q ? '$' + q.c.toFixed(2) : 'â€”'}</p>
                   <p className={"text-[10px] font-medium " + (isUp ? "text-emerald-400" : "text-red-400")}>
                     {q ? (q.dp >= 0 ? '+' : '') + q.dp.toFixed(2) + '%' : ''}
                   </p>
@@ -468,7 +468,7 @@ function CryptoPanel({ onSelect }: { onSelect: (s: string) => void }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-bold text-white">{q ? '$' + q.c.toLocaleString() : '—'}</p>
+                  <p className="text-sm font-bold text-white">{q ? '$' + q.c.toLocaleString() : 'â€”'}</p>
                   <p className={"text-xs font-semibold " + (isUp ? "text-emerald-400" : "text-red-400")}>
                     {q ? (q.dp >= 0 ? '+' : '') + q.dp.toFixed(2) + '%' : ''}
                   </p>
@@ -516,7 +516,7 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
 
       {/* P&L Chart */}
       <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
-        <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest mb-4">Portfolio Value — Last 30 Days</h3>
+        <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest mb-4">Portfolio Value â€” Last 30 Days</h3>
         <div className="h-40">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={pnlHistory}>
@@ -580,9 +580,8 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
   const { marketTab, setMarketTab } = useStore();
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
 
-  const stocks = marketTab === 'india' ? INDIAN_STOCKS : marketTab === 'crypto' ? [] : US_STOCKS;
-
   useEffect(() => {
+    const stocks = marketTab === 'india' ? INDIAN_STOCKS : marketTab === 'crypto' ? [] : US_STOCKS;
     stocks.forEach(({ symbol }) => {
       getQuote(symbol).then(q => { if (q) setQuotes(prev => ({ ...prev, [symbol]: q })); });
     });
@@ -598,7 +597,7 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
           {(['us', 'india', 'crypto'] as const).map(t => (
             <button key={t} onClick={() => setMarketTab(t)}
               className={"px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-colors " + (marketTab === t ? "bg-blue-600 text-white" : "text-[#5a6a8a] hover:text-white")}>
-              {t === 'us' ? '🇺🇸 US' : t === 'india' ? '🇮🇳 India' : '₿ Crypto'}
+              {t === 'us' ? 'ðŸ‡ºðŸ‡¸ US' : t === 'india' ? 'ðŸ‡®ðŸ‡³ India' : 'â‚¿ Crypto'}
             </button>
           ))}
         </div>
@@ -607,7 +606,7 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
         <CryptoPanel onSelect={onSelect} />
       ) : (
         <div className="space-y-2">
-          {stocks.map(({ symbol, name }) => {
+          {(marketTab === 'india' ? INDIAN_STOCKS : US_STOCKS).map(({ symbol, name }) => {
             const q = quotes[symbol];
             const isUp = q ? q.dp >= 0 : true;
             const displaySym = symbol.replace('NSE:', '');
@@ -621,7 +620,7 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
                 <div className="flex items-center gap-4">
                   <Sparkline data={Array.from({length: 12}, () => (q?.c || 100) + (Math.random()-0.5)*5)} color={isUp ? '#10b981' : '#ef4444'} />
                   <div className="text-right min-w-[80px]">
-                    <p className="text-sm font-bold text-white">{q ? '$' + q.c.toFixed(2) : '—'}</p>
+                    <p className="text-sm font-bold text-white">{q ? '$' + q.c.toFixed(2) : 'â€”'}</p>
                     <p className={"text-xs font-semibold " + (isUp ? "text-emerald-400" : "text-red-400")}>
                       {q ? (q.dp >= 0 ? '+' : '') + q.dp.toFixed(2) + '%' : ''}
                     </p>
@@ -680,10 +679,10 @@ function SettingsPage() {
         <div className="flex items-center justify-between py-3">
           <div>
             <p className="text-sm font-semibold text-white">Data source</p>
-            <p className="text-xs text-[#5a6a8a]">Finnhub API · Free tier (demo mode if no key set)</p>
+            <p className="text-xs text-[#5a6a8a]">Finnhub API Â· Free tier (demo mode if no key set)</p>
           </div>
           <a href="https://finnhub.io" target="_blank" rel="noopener noreferrer"
-            className="text-xs text-blue-400 hover:text-blue-300 transition-colors">Get API key →</a>
+            className="text-xs text-blue-400 hover:text-blue-300 transition-colors">Get API key â†’</a>
         </div>
       </div>
 
@@ -702,7 +701,7 @@ function SettingsPage() {
             </ul>
             <button onClick={handleUpgrade} disabled={loading}
               className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-colors">
-              <CreditCard size={15} /> {loading ? 'Redirecting...' : 'Upgrade — $19/mo'}
+              <CreditCard size={15} /> {loading ? 'Redirecting...' : 'Upgrade â€” $19/mo'}
             </button>
           </div>
         </div>
@@ -970,7 +969,7 @@ export default function Home() {
           </div>
           <h1 className="text-5xl font-black text-white tracking-tight">StockPro</h1>
         </div>
-        <p className="text-[#5a6a8a] text-sm">Professional stock monitoring · US · India · Crypto</p>
+        <p className="text-[#5a6a8a] text-sm">Professional stock monitoring Â· US Â· India Â· Crypto</p>
       </div>
       <div className="bg-[#0c1020] border border-[#1a2444] p-6 rounded-2xl shadow-2xl w-full max-w-sm">
         <SignIn routing="hash" appearance={{
@@ -989,3 +988,4 @@ export default function Home() {
 
   return <Dashboard />;
 }
+
