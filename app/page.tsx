@@ -1,238 +1,184 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useUser, UserButton, SignIn } from "@clerk/nextjs";
 import {
-  ComposedChart, Line, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Area,
+  ComposedChart, AreaChart, Area, Line, Bar,
+  XAxis, YAxis, Tooltip, ResponsiveContainer,
+  CartesianGrid, ReferenceLine,
 } from "recharts";
 import {
-  TrendingUp, Search, Menu, X, Wallet,
-  LayoutDashboard, BarChart2, Star, Newspaper,
-  Plus, Trash2, CreditCard, ChevronUp, ChevronDown,
+  TrendingUp, TrendingDown, Search, Menu, X, Wallet,
+  LayoutDashboard, Star, Newspaper, BarChart2,
+  Bell, Settings, Sun, Moon, Plus, Trash2, CreditCard,
+  ChevronUp, ChevronDown, Bitcoin, Globe, Filter,
+  AlertTriangle, CheckCircle, Info, ArrowUpRight, ArrowDownRight,
+  RefreshCw, BookOpen, Zap,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "../lib/store";
-import { getQuote, getNews } from "../lib/api";
+import {
+  getQuote, getCandles, getFundamentals, getMetrics,
+  getNews, getCryptoQuote, searchSymbol, generateMockCandles,
+  INDIAN_STOCKS, US_STOCKS, CRYPTO_LIST,
+  type Quote, type Candle, type NewsItem,
+  type Fundamentals, type Metrics, type SearchResult,
+} from "../lib/api";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface NewsItem {
-  headline: string;
-  source: string;
-  datetime: number;
-  url: string;
-}
-interface QuoteData {
-  c: number;
-  d: number;
-  dp: number;
-  h: number;
-  l: number;
-  o: number;
-  pc: number;
-}
-interface ChartPoint {
-  time: string;
-  price: number;
-  sma: number;
-  ema: number;
-  volume: number;
-}
-
-// ── Mock chart data ───────────────────────────────────────────────────────────
-const generateChartData = (base = 100): ChartPoint[] => {
-  let price = base;
-  return Array.from({ length: 50 }, (_, i) => {
-    price += (Math.random() - 0.48) * 2;
-    return {
-      time: i + "m",
-      price: parseFloat(price.toFixed(2)),
-      sma: parseFloat((price + 0.5).toFixed(2)),
-      ema: parseFloat((price - 0.2).toFixed(2)),
-      volume: Math.floor(Math.random() * 10000),
-    };
-  });
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const fmt = (n: number | undefined, prefix = '') => {
+  if (n === undefined || n === null || isNaN(n)) return '—';
+  if (Math.abs(n) >= 1e9) return prefix + (n / 1e9).toFixed(2) + 'B';
+  if (Math.abs(n) >= 1e6) return prefix + (n / 1e6).toFixed(2) + 'M';
+  return prefix + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+};
+const fmtDate = (ts: number) => new Date(ts * 1000).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+const timeAgo = (ts: number) => {
+  const diff = Math.floor((Date.now() - ts * (ts < 1e12 ? 1000 : 1)) / 60000);
+  if (diff < 60) return diff + 'm ago';
+  if (diff < 1440) return Math.floor(diff / 60) + 'h ago';
+  return Math.floor(diff / 1440) + 'd ago';
 };
 
-// ── Stat Card ─────────────────────────────────────────────────────────────────
-function StatCard({
-  label, value, sub, positive,
-}: {
-  label: string; value: string; sub?: string; positive?: boolean;
-}) {
+// ── Theme classes ─────────────────────────────────────────────────────────────
+const T = {
+  bg: 'bg-[#080b14]',
+  sidebar: 'bg-[#0c1020]',
+  card: 'bg-[#0f1629]',
+  border: 'border-[#1a2444]',
+  text: 'text-white',
+  muted: 'text-[#5a6a8a]',
+  accent: '#3b7cff',
+  green: 'text-emerald-400',
+  red: 'text-red-400',
+};
+
+// ── Mini sparkline ────────────────────────────────────────────────────────────
+function Sparkline({ data, color }: { data: number[]; color: string }) {
+  const min = Math.min(...data), max = Math.max(...data);
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * 80;
+    const y = 20 - ((v - min) / (max - min || 1)) * 18;
+    return `${x},${y}`;
+  }).join(' ');
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-slate-700 transition-colors"
-    >
-      <p className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-2">{label}</p>
-      <h3 className={"text-2xl font-bold " + (positive === undefined ? "text-white" : positive ? "text-emerald-400" : "text-red-400")}>
-        {value}
-      </h3>
-      {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
-    </motion.div>
+    <svg width="80" height="20" viewBox="0 0 80 20">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
-// ── Technical Chart ───────────────────────────────────────────────────────────
-function TechnicalChart({ symbol }: { symbol: string }) {
-  const [data, setData] = useState<ChartPoint[]>([]);
-  const [quote, setQuote] = useState<QuoteData | null>(null);
+// ── Candlestick Chart ─────────────────────────────────────────────────────────
+function CandlestickChart({ candles, symbol }: { candles: Candle[]; symbol: string }) {
+  const [chartType, setChartType] = useState<'candle' | 'area' | 'bar'>('area');
+  const [range, setRange] = useState<'1W' | '1M' | '3M' | '1Y'>('3M');
 
-  useEffect(() => {
-    const base = symbol === "AAPL" ? 170 : symbol === "TSLA" ? 250 : symbol === "MSFT" ? 380 : 150;
-    setData(generateChartData(base));
-    getQuote(symbol).then((q: QuoteData | null) => { if (q && q.c) setQuote(q); });
+  const filtered = (() => {
+    const days = { '1W': 7, '1M': 30, '3M': 90, '1Y': 365 }[range];
+    return candles.slice(-days);
+  })();
 
-    const interval = setInterval(() => {
-      setData((prev) => {
-        const last = prev[prev.length - 1]?.price ?? 150;
-        const next = last + (Math.random() - 0.48) * 1.5;
-        const point: ChartPoint = {
-          time: prev.length + "m",
-          price: parseFloat(next.toFixed(2)),
-          sma: parseFloat((next + 0.5).toFixed(2)),
-          ema: parseFloat((next - 0.2).toFixed(2)),
-          volume: Math.floor(Math.random() * 10000),
-        };
-        return [...prev.slice(-49), point];
-      });
-    }, 3000);
+  const areaData = filtered.map(c => ({
+    date: fmtDate(c.t), price: c.c, open: c.o, high: c.h, low: c.l, volume: c.v,
+  }));
 
-    return () => clearInterval(interval);
-  }, [symbol]);
-
-  const last = data[data.length - 1]?.price ?? 0;
-  const first = data[0]?.price ?? 0;
-  const isUp = last >= first;
+  const isUp = filtered.length > 1
+    ? filtered[filtered.length - 1].c >= filtered[0].c
+    : true;
+  const color = isUp ? '#10b981' : '#ef4444';
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-      <div className="flex justify-between items-start mb-5">
-        <div>
-          <div className="flex items-center gap-3">
-            <h3 className="text-xl font-bold text-white">{symbol}</h3>
-            {quote && (
-              <span className={"text-sm font-semibold px-2 py-0.5 rounded-lg " + (quote.dp >= 0 ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400")}>
-                {quote.dp >= 0 ? "+" : ""}{quote.dp?.toFixed(2)}%
-              </span>
-            )}
-          </div>
-          <p className="text-slate-400 text-sm mt-0.5 flex items-center gap-1.5">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            Live · updates every 3s
-          </p>
+    <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div className="flex gap-1">
+          {(['1W', '1M', '3M', '1Y'] as const).map(r => (
+            <button key={r} onClick={() => setRange(r)}
+              className={"px-3 py-1 rounded-lg text-xs font-semibold transition-colors " + (range === r ? "bg-blue-600 text-white" : "text-[#5a6a8a] hover:text-white hover:bg-[#1a2444]")}>
+              {r}
+            </button>
+          ))}
         </div>
-        <div className="text-right">
-          <p className="text-2xl font-bold text-white">${last.toFixed(2)}</p>
-          <p className={"text-sm font-medium flex items-center justify-end gap-1 " + (isUp ? "text-emerald-400" : "text-red-400")}>
-            {isUp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            {Math.abs(last - first).toFixed(2)} today
-          </p>
+        <div className="flex gap-1">
+          {(['area', 'candle', 'bar'] as const).map(t => (
+            <button key={t} onClick={() => setChartType(t)}
+              className={"px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-colors " + (chartType === t ? "bg-[#1a2444] text-white" : "text-[#5a6a8a] hover:text-white")}>
+              {t}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="flex gap-2 mb-4">
-        <span className="px-2 py-1 bg-blue-500/15 text-blue-400 rounded-lg text-xs font-medium">SMA</span>
-        <span className="px-2 py-1 bg-purple-500/15 text-purple-400 rounded-lg text-xs font-medium">EMA</span>
-        <span className="px-2 py-1 bg-slate-700 text-slate-400 rounded-lg text-xs font-medium">Volume</span>
-      </div>
-
-      <div className="h-64">
+      <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data}>
-            <defs>
-              <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="time" stroke="#1e293b" tick={{ fill: "#475569", fontSize: 10 }} />
-            <YAxis yAxisId="l" stroke="#1e293b" tick={{ fill: "#475569", fontSize: 10 }} domain={["auto", "auto"]} />
-            <YAxis yAxisId="r" orientation="right" stroke="#1e293b" tick={{ fill: "#475569", fontSize: 10 }} />
-            <Tooltip
-              contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "12px", fontSize: "12px" }}
-              labelStyle={{ color: "#94a3b8" }}
-            />
-            <Area yAxisId="l" type="monotone" dataKey="price" stroke="#3b82f6" fill="url(#priceGrad)" strokeWidth={2} dot={false} />
-            <Line yAxisId="l" type="monotone" dataKey="sma" stroke="#60a5fa" dot={false} strokeWidth={1.5} strokeDasharray="4 2" />
-            <Line yAxisId="l" type="monotone" dataKey="ema" stroke="#a855f7" dot={false} strokeWidth={1.5} strokeDasharray="4 2" />
-            <Bar yAxisId="r" dataKey="volume" fill="#1e293b" barSize={3} radius={[2, 2, 0, 0]} />
-          </ComposedChart>
+          {chartType === 'bar' ? (
+            <ComposedChart data={areaData}>
+              <CartesianGrid stroke="#1a2444" strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke="#1a2444" tick={{ fill: '#5a6a8a', fontSize: 10 }} />
+              <YAxis stroke="#1a2444" tick={{ fill: '#5a6a8a', fontSize: 10 }} domain={['auto', 'auto']} />
+              <Tooltip contentStyle={{ background: '#0f1629', border: '1px solid #1a2444', borderRadius: '10px', fontSize: '11px' }} labelStyle={{ color: '#94a3b8' }} />
+              <Bar dataKey="volume" fill="#1a2444" radius={[2, 2, 0, 0]} />
+              <Line type="monotone" dataKey="price" stroke={color} dot={false} strokeWidth={2} />
+            </ComposedChart>
+          ) : (
+            <AreaChart data={areaData}>
+              <defs>
+                <linearGradient id={"grad-" + symbol} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity={0.2} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="#1a2444" strokeDasharray="3 3" />
+              <XAxis dataKey="date" stroke="#1a2444" tick={{ fill: '#5a6a8a', fontSize: 10 }} />
+              <YAxis stroke="#1a2444" tick={{ fill: '#5a6a8a', fontSize: 10 }} domain={['auto', 'auto']} />
+              <Tooltip
+                contentStyle={{ background: '#0f1629', border: '1px solid #1a2444', borderRadius: '10px', fontSize: '11px' }}
+                labelStyle={{ color: '#94a3b8' }}
+                formatter={(v: number) => ['$' + v.toFixed(2), 'Price']}
+              />
+              <Area type="monotone" dataKey="price" stroke={color} fill={"url(#grad-" + symbol + ")"} strokeWidth={2} dot={false} />
+            </AreaChart>
+          )}
         </ResponsiveContainer>
       </div>
     </div>
   );
 }
 
-// ── Analyst Ratings ───────────────────────────────────────────────────────────
-function AnalystRatings() {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-      <h3 className="font-semibold text-white mb-4 text-sm uppercase tracking-widest">Analyst Consensus</h3>
-      <div className="flex h-3 rounded-full overflow-hidden gap-0.5">
-        <div className="w-[60%] bg-emerald-500 rounded-l-full" />
-        <div className="w-[30%] bg-amber-400" />
-        <div className="w-[10%] bg-red-500 rounded-r-full" />
-      </div>
-      <div className="flex justify-between text-xs text-slate-400 mt-2.5">
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />Buy 60%</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />Hold 30%</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />Sell 10%</span>
-      </div>
-    </div>
-  );
-}
+// ── Fundamentals Panel ────────────────────────────────────────────────────────
+function FundamentalsPanel({ symbol }: { symbol: string }) {
+  const [fund, setFund] = useState<Fundamentals | null>(null);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
 
-// ── Watchlist Panel ───────────────────────────────────────────────────────────
-function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void; selected: string }) {
-  const { watchlist, addToWatchlist, removeFromWatchlist } = useStore();
-  const [input, setInput] = useState("");
+  useEffect(() => {
+    getFundamentals(symbol).then(setFund);
+    getMetrics(symbol).then(setMetrics);
+  }, [symbol]);
 
-  const handleAdd = () => {
-    const sym = input.trim().toUpperCase();
-    if (sym.length > 0 && sym.length <= 5) {
-      addToWatchlist(sym);
-      setInput("");
-    }
-  };
+  const rows = [
+    { label: 'P/E Ratio', value: fmt(metrics?.peNormalizedAnnual) },
+    { label: 'EPS', value: fmt(metrics?.epsNormalizedAnnual, '$') },
+    { label: 'Market Cap', value: fmt(metrics?.marketCapitalization, '$') },
+    { label: '52W High', value: fmt(metrics?.['52WeekHigh'], '$') },
+    { label: '52W Low', value: fmt(metrics?.['52WeekLow'], '$') },
+    { label: 'Beta', value: fmt(metrics?.beta) },
+    { label: 'Div Yield', value: metrics?.dividendYieldIndicatedAnnual ? metrics.dividendYieldIndicatedAnnual.toFixed(2) + '%' : '—' },
+    { label: 'ROE', value: metrics?.roeRfy ? metrics.roeRfy.toFixed(1) + '%' : '—' },
+  ];
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col gap-3">
-      <h3 className="font-semibold text-white text-sm uppercase tracking-widest flex items-center gap-2">
-        <Star size={14} className="text-amber-400" /> Watchlist
-      </h3>
-      <div className="flex gap-2">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-          placeholder="Add symbol..."
-          maxLength={5}
-          className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-blue-500 uppercase"
-        />
-        <button onClick={handleAdd} className="p-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors">
-          <Plus size={14} className="text-white" />
-        </button>
+    <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+      <div className="flex items-center gap-3 mb-4">
+        {fund?.logo && <img src={fund.logo} alt={fund.name} className="w-8 h-8 rounded-lg object-contain bg-white p-0.5" />}
+        <div>
+          <h4 className="text-white font-bold text-sm">{fund?.name || symbol}</h4>
+          <p className="text-[#5a6a8a] text-xs">{fund?.industry || 'Loading...'}</p>
+        </div>
       </div>
-      <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-        {watchlist.map((sym) => (
-          <div
-            key={sym}
-            onClick={() => onSelect(sym)}
-            className={"flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition-colors border " + (selected === sym ? "bg-blue-600/20 border-blue-500/30" : "hover:bg-slate-800 border-transparent")}
-          >
-            <span className={"text-sm font-semibold " + (selected === sym ? "text-blue-400" : "text-white")}>{sym}</span>
-            <button
-              onClick={(e) => { e.stopPropagation(); removeFromWatchlist(sym); }}
-              className="text-slate-600 hover:text-red-400 transition-colors"
-            >
-              <Trash2 size={13} />
-            </button>
+      <div className="grid grid-cols-2 gap-2">
+        {rows.map(({ label, value }) => (
+          <div key={label} className="bg-[#080b14] rounded-xl p-3">
+            <p className="text-[#5a6a8a] text-xs mb-1">{label}</p>
+            <p className="text-white font-semibold text-sm">{value}</p>
           </div>
         ))}
       </div>
@@ -240,60 +186,50 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
   );
 }
 
-// ── News Feed ─────────────────────────────────────────────────────────────────
-function NewsFeed() {
+// ── News Feed with sentiment ──────────────────────────────────────────────────
+function NewsFeed({ symbol }: { symbol?: string }) {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getNews().then((data: NewsItem[]) => {
-      if (data && data.length > 0) {
-        setNews(data);
-      } else {
-        setNews([
-          { headline: "Markets Rally Amid Fed Policy Update", source: "Bloomberg", datetime: Date.now() - 120000, url: "#" },
-          { headline: "Analysts Upgrade Apple to Strong Buy", source: "Reuters", datetime: Date.now() - 900000, url: "#" },
-          { headline: "S&P 500 Hits New All-Time High", source: "CNBC", datetime: Date.now() - 3600000, url: "#" },
-          { headline: "Tech Earnings Season Kicks Off Strong", source: "WSJ", datetime: Date.now() - 7200000, url: "#" },
-        ]);
-      }
+    setLoading(true);
+    getNews(symbol).then(data => {
+      if (data.length > 0) setNews(data);
+      else setNews([
+        { id: 1, headline: 'Markets rally as inflation data cools', source: 'Reuters', datetime: Date.now() - 120000, url: '#', summary: '', image: '', sentiment: 'positive' },
+        { id: 2, headline: 'Fed signals potential rate pause', source: 'Bloomberg', datetime: Date.now() - 900000, url: '#', summary: '', image: '', sentiment: 'neutral' },
+        { id: 3, headline: 'Tech selloff deepens amid rate concerns', source: 'CNBC', datetime: Date.now() - 3600000, url: '#', summary: '', image: '', sentiment: 'negative' },
+        { id: 4, headline: 'Nifty 50 hits all-time high on FII inflows', source: 'Economic Times', datetime: Date.now() - 7200000, url: '#', summary: '', image: '', sentiment: 'positive' },
+      ]);
       setLoading(false);
     });
-  }, []);
+  }, [symbol]);
 
-  const timeAgo = (ts: number) => {
-    const diff = Math.floor((Date.now() - ts * (ts < 1e12 ? 1000 : 1)) / 60000);
-    if (diff < 60) return diff + "m ago";
-    if (diff < 1440) return Math.floor(diff / 60) + "h ago";
-    return Math.floor(diff / 1440) + "d ago";
+  const sentimentIcon = (s?: string) => {
+    if (s === 'positive') return <ArrowUpRight size={12} className="text-emerald-400" />;
+    if (s === 'negative') return <ArrowDownRight size={12} className="text-red-400" />;
+    return <Info size={12} className="text-blue-400" />;
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-      <h3 className="font-semibold text-white text-sm uppercase tracking-widest flex items-center gap-2 mb-4">
-        <Newspaper size={14} className="text-slate-400" /> Market News
+    <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+      <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest mb-4 flex items-center gap-2">
+        <Newspaper size={13} /> Market News
       </h3>
       {loading ? (
         <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="animate-pulse">
-              <div className="h-3 bg-slate-800 rounded w-3/4 mb-2" />
-              <div className="h-2 bg-slate-800 rounded w-1/4" />
-            </div>
-          ))}
+          {[1,2,3].map(i => <div key={i} className="animate-pulse h-10 bg-[#0f1629] rounded-xl" />)}
         </div>
       ) : (
-        <div className="space-y-3">
-          {news.map((item, i) => (
-            <a
-              key={i}
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block border-b border-slate-800 last:border-0 pb-3 last:pb-0 hover:bg-slate-800/40 rounded-lg px-2 py-1.5 -mx-2 transition-colors"
-            >
-              <p className="text-sm font-medium text-slate-200 leading-snug">{item.headline}</p>
-              <p className="text-xs text-slate-500 mt-1">{item.source} · {timeAgo(item.datetime)}</p>
+        <div className="space-y-2">
+          {news.map((item) => (
+            <a key={item.id} href={item.url} target="_blank" rel="noopener noreferrer"
+              className="flex items-start gap-2 p-2 rounded-xl hover:bg-[#1a2444]/40 transition-colors block">
+              <span className="mt-0.5 shrink-0">{sentimentIcon(item.sentiment)}</span>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-slate-200 leading-snug line-clamp-2">{item.headline}</p>
+                <p className="text-[10px] text-[#5a6a8a] mt-0.5">{item.source} · {timeAgo(item.datetime)}</p>
+              </div>
             </a>
           ))}
         </div>
@@ -302,100 +238,609 @@ function NewsFeed() {
   );
 }
 
-// ── Upgrade Banner ────────────────────────────────────────────────────────────
-function UpgradeBanner() {
+// ── Alerts Panel ──────────────────────────────────────────────────────────────
+function AlertsPanel() {
+  const { alerts, addAlert, removeAlert, toggleAlert } = useStore();
+  const [sym, setSym] = useState('');
+  const [cond, setCond] = useState<'above' | 'below'>('above');
+  const [price, setPrice] = useState('');
+
+  const handleAdd = () => {
+    if (!sym || !price) return;
+    addAlert({ symbol: sym.toUpperCase(), condition: cond, price: parseFloat(price), active: true });
+    setSym(''); setPrice('');
+  };
+
+  return (
+    <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+      <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest mb-4 flex items-center gap-2">
+        <Bell size={13} /> Price Alerts
+      </h3>
+
+      <div className="space-y-2 mb-4">
+        <input value={sym} onChange={e => setSym(e.target.value)} placeholder="Symbol (e.g. AAPL)"
+          className="w-full bg-[#080b14] border border-[#1a2444] rounded-xl px-3 py-2 text-xs text-white placeholder-[#5a6a8a] outline-none focus:border-blue-500 uppercase" />
+        <div className="flex gap-2">
+          <select value={cond} onChange={e => setCond(e.target.value as 'above' | 'below')}
+            className="flex-1 bg-[#080b14] border border-[#1a2444] rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500">
+            <option value="above">Above</option>
+            <option value="below">Below</option>
+          </select>
+          <input value={price} onChange={e => setPrice(e.target.value)} placeholder="Price" type="number"
+            className="flex-1 bg-[#080b14] border border-[#1a2444] rounded-xl px-3 py-2 text-xs text-white placeholder-[#5a6a8a] outline-none focus:border-blue-500" />
+        </div>
+        <button onClick={handleAdd}
+          className="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-xs font-semibold text-white transition-colors flex items-center justify-center gap-2">
+          <Plus size={13} /> Add Alert
+        </button>
+      </div>
+
+      <div className="space-y-2 max-h-48 overflow-y-auto">
+        {alerts.length === 0 && <p className="text-[#5a6a8a] text-xs text-center py-4">No alerts set</p>}
+        {alerts.map(a => (
+          <div key={a.id} className="flex items-center justify-between bg-[#080b14] rounded-xl px-3 py-2">
+            <div className="flex items-center gap-2">
+              <button onClick={() => toggleAlert(a.id)}>
+                {a.active
+                  ? <CheckCircle size={14} className="text-emerald-400" />
+                  : <AlertTriangle size={14} className="text-[#5a6a8a]" />}
+              </button>
+              <span className="text-xs text-white font-semibold">{a.symbol}</span>
+              <span className="text-[10px] text-[#5a6a8a]">{a.condition} ${a.price}</span>
+            </div>
+            <button onClick={() => removeAlert(a.id)} className="text-[#5a6a8a] hover:text-red-400">
+              <Trash2 size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Watchlist ─────────────────────────────────────────────────────────────────
+function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void; selected: string }) {
+  const { watchlist, addToWatchlist, removeFromWatchlist } = useStore();
+  const [input, setInput] = useState('');
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+
+  useEffect(() => {
+    watchlist.forEach(({ symbol }) => {
+      getQuote(symbol).then(q => { if (q) setQuotes(prev => ({ ...prev, [symbol]: q })); });
+    });
+  }, [watchlist]);
+
+  const handleAdd = () => {
+    const sym = input.trim().toUpperCase();
+    if (sym) { addToWatchlist({ symbol: sym, name: sym }); setInput(''); }
+  };
+
+  const sparkData = (symbol: string) => {
+    const q = quotes[symbol];
+    if (!q) return [];
+    const base = q.pc;
+    return Array.from({ length: 12 }, (_, i) => base + (Math.random() - 0.5) * base * 0.02 * i * 0.3);
+  };
+
+  return (
+    <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+      <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest mb-4 flex items-center gap-2">
+        <Star size={13} className="text-amber-400" /> Watchlist
+      </h3>
+      <div className="flex gap-2 mb-3">
+        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()}
+          placeholder="Add symbol..." maxLength={15}
+          className="flex-1 bg-[#080b14] border border-[#1a2444] rounded-xl px-3 py-1.5 text-xs text-white placeholder-[#5a6a8a] outline-none focus:border-blue-500 uppercase" />
+        <button onClick={handleAdd} className="p-2 bg-blue-600 hover:bg-blue-500 rounded-xl transition-colors">
+          <Plus size={13} className="text-white" />
+        </button>
+      </div>
+      <div className="space-y-1.5 max-h-80 overflow-y-auto">
+        {watchlist.map(({ symbol, name }) => {
+          const q = quotes[symbol];
+          const isUp = q ? q.dp >= 0 : true;
+          return (
+            <div key={symbol} onClick={() => onSelect(symbol)}
+              className={"flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition-colors border " + (selected === symbol ? "bg-blue-600/10 border-blue-500/30" : "hover:bg-[#1a2444]/40 border-transparent")}>
+              <div className="flex items-center gap-3">
+                <div>
+                  <p className={"text-xs font-bold " + (selected === symbol ? "text-blue-400" : "text-white")}>{symbol.replace('NSE:', '')}</p>
+                  <p className="text-[10px] text-[#5a6a8a]">{name}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Sparkline data={sparkData(symbol)} color={isUp ? '#10b981' : '#ef4444'} />
+                <div className="text-right min-w-[60px]">
+                  <p className="text-xs font-semibold text-white">{q ? '$' + q.c.toFixed(2) : '—'}</p>
+                  <p className={"text-[10px] font-medium " + (isUp ? "text-emerald-400" : "text-red-400")}>
+                    {q ? (q.dp >= 0 ? '+' : '') + q.dp.toFixed(2) + '%' : ''}
+                  </p>
+                </div>
+                <button onClick={e => { e.stopPropagation(); removeFromWatchlist(symbol); }}
+                  className="text-[#5a6a8a] hover:text-red-400 transition-colors">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Stock Screener ────────────────────────────────────────────────────────────
+function ScreenerPanel({ onSelect }: { onSelect: (s: string) => void }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (query.length < 2) { setResults([]); return; }
+    setLoading(true);
+    const t = setTimeout(() => {
+      searchSymbol(query).then(r => { setResults(r); setLoading(false); });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const filters = [
+    { label: 'Large Cap', desc: 'Market cap > $10B' },
+    { label: 'High Growth', desc: 'Revenue growth > 20%' },
+    { label: 'Dividend', desc: 'Yield > 2%' },
+    { label: 'Value', desc: 'P/E < 15' },
+    { label: 'Momentum', desc: 'Near 52W high' },
+    { label: 'India NSE', desc: 'Indian market stocks' },
+  ];
+
+  return (
+    <div className="space-y-5 max-w-4xl">
+      <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+        <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest mb-4 flex items-center gap-2">
+          <Filter size={13} /> Stock Screener
+        </h3>
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5a6a8a] w-4 h-4" />
+          <input value={query} onChange={e => setQuery(e.target.value)}
+            placeholder="Search any stock, ETF, or crypto..."
+            className="w-full bg-[#080b14] border border-[#1a2444] rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-[#5a6a8a] outline-none focus:border-blue-500 uppercase" />
+        </div>
+        {loading && <p className="text-[#5a6a8a] text-xs text-center py-2">Searching...</p>}
+        {results.length > 0 && (
+          <div className="space-y-1.5 mb-4">
+            {results.map(r => (
+              <div key={r.symbol} onClick={() => onSelect(r.symbol)}
+                className="flex items-center justify-between p-3 bg-[#080b14] rounded-xl cursor-pointer hover:bg-[#1a2444]/50 transition-colors">
+                <div>
+                  <span className="text-sm font-bold text-white">{r.symbol}</span>
+                  <span className="text-xs text-[#5a6a8a] ml-2">{r.description}</span>
+                </div>
+                <span className="text-xs text-[#5a6a8a] bg-[#1a2444] px-2 py-0.5 rounded-lg">{r.type}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {filters.map(f => (
+            <div key={f.label} className="bg-[#080b14] border border-[#1a2444] rounded-xl p-3 cursor-pointer hover:border-blue-500/50 transition-colors">
+              <p className="text-xs font-semibold text-white">{f.label}</p>
+              <p className="text-[10px] text-[#5a6a8a] mt-0.5">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Crypto Dashboard ──────────────────────────────────────────────────────────
+function CryptoPanel({ onSelect }: { onSelect: (s: string) => void }) {
+  const [quotes, setQuotes] = useState<Record<string, { c: number; dp: number }>>({});
+
+  useEffect(() => {
+    CRYPTO_LIST.forEach(({ symbol }) => {
+      getCryptoQuote(symbol).then(q => {
+        if (q) setQuotes(prev => ({ ...prev, [symbol]: q }));
+      });
+    });
+  }, []);
+
+  return (
+    <div className="space-y-5 max-w-4xl">
+      <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+        <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest mb-4 flex items-center gap-2">
+          <Bitcoin size={13} className="text-amber-400" /> Crypto Markets
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {CRYPTO_LIST.map(({ symbol, name }) => {
+            const q = quotes[symbol];
+            const isUp = q ? q.dp >= 0 : true;
+            return (
+              <div key={symbol} onClick={() => onSelect(symbol)}
+                className="flex items-center justify-between bg-[#080b14] border border-[#1a2444] rounded-2xl p-4 cursor-pointer hover:border-blue-500/30 transition-all">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                    <Bitcoin size={18} className="text-amber-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-white">{symbol}</p>
+                    <p className="text-xs text-[#5a6a8a]">{name}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-white">{q ? '$' + q.c.toLocaleString() : '—'}</p>
+                  <p className={"text-xs font-semibold " + (isUp ? "text-emerald-400" : "text-red-400")}>
+                    {q ? (q.dp >= 0 ? '+' : '') + q.dp.toFixed(2) + '%' : ''}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Portfolio Page ────────────────────────────────────────────────────────────
+function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
+  const { portfolio, balance, removePosition } = useStore();
+
+  const totalValue = portfolio.reduce((s, p) => s + p.currentPrice * p.quantity, 0);
+  const totalCost = portfolio.reduce((s, p) => s + p.avgPrice * p.quantity, 0);
+  const totalPnl = totalValue - totalCost;
+  const totalPnlPct = totalCost ? (totalPnl / totalCost) * 100 : 0;
+
+  const pnlHistory = Array.from({ length: 30 }, (_, i) => ({
+    day: i + 1,
+    value: totalValue * (0.85 + Math.random() * 0.15 + i * 0.002),
+  }));
+
+  return (
+    <div className="space-y-5 max-w-5xl">
+      {/* Summary */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Value', value: '$' + (totalValue + balance).toLocaleString(), sub: 'Portfolio + Cash' },
+          { label: 'Invested', value: '$' + totalCost.toLocaleString(), sub: portfolio.length + ' positions' },
+          { label: 'Total P&L', value: (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(0), positive: totalPnl >= 0, sub: totalPnlPct.toFixed(2) + '%' },
+          { label: 'Cash Balance', value: '$' + balance.toLocaleString(), sub: 'Available' },
+        ].map(({ label, value, sub, positive }) => (
+          <div key={label} className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+            <p className="text-xs text-[#5a6a8a] uppercase tracking-widest mb-2">{label}</p>
+            <p className={"text-2xl font-bold " + (positive === undefined ? "text-white" : positive ? "text-emerald-400" : "text-red-400")}>{value}</p>
+            <p className="text-xs text-[#5a6a8a] mt-1">{sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* P&L Chart */}
+      <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+        <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest mb-4">Portfolio Value — Last 30 Days</h3>
+        <div className="h-40">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={pnlHistory}>
+              <defs>
+                <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#3b7cff" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="#3b7cff" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="day" stroke="#1a2444" tick={{ fill: '#5a6a8a', fontSize: 10 }} />
+              <YAxis stroke="#1a2444" tick={{ fill: '#5a6a8a', fontSize: 10 }} domain={['auto', 'auto']} />
+              <Tooltip contentStyle={{ background: '#0f1629', border: '1px solid #1a2444', borderRadius: '10px', fontSize: '11px' }} />
+              <Area type="monotone" dataKey="value" stroke="#3b7cff" fill="url(#pnlGrad)" strokeWidth={2} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Positions */}
+      <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+        <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest mb-4">Positions</h3>
+        {portfolio.length === 0 ? (
+          <div className="text-center py-10">
+            <BarChart2 size={36} className="text-[#1a2444] mx-auto mb-3" />
+            <p className="text-[#5a6a8a] text-sm">No positions yet</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {portfolio.map(p => {
+              const pnl = (p.currentPrice - p.avgPrice) * p.quantity;
+              const pct = ((p.currentPrice - p.avgPrice) / p.avgPrice) * 100;
+              return (
+                <div key={p.symbol} onClick={() => onSelect(p.symbol)}
+                  className="flex items-center justify-between bg-[#080b14] rounded-2xl p-4 cursor-pointer hover:bg-[#1a2444]/40 transition-colors">
+                  <div>
+                    <p className="text-sm font-bold text-white">{p.symbol}</p>
+                    <p className="text-xs text-[#5a6a8a]">{p.quantity} shares @ ${p.avgPrice.toFixed(2)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-white">${(p.currentPrice * p.quantity).toFixed(2)}</p>
+                    <p className={"text-xs font-semibold " + (pnl >= 0 ? "text-emerald-400" : "text-red-400")}>
+                      {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} ({pct.toFixed(2)}%)
+                    </p>
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); removePosition(p.symbol); }}
+                    className="ml-4 text-[#5a6a8a] hover:text-red-400 transition-colors">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Markets Overview ──────────────────────────────────────────────────────────
+function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
+  const { marketTab, setMarketTab } = useStore();
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+
+  const stocks = marketTab === 'india' ? INDIAN_STOCKS : marketTab === 'crypto' ? [] : US_STOCKS;
+
+  useEffect(() => {
+    stocks.forEach(({ symbol }) => {
+      getQuote(symbol).then(q => { if (q) setQuotes(prev => ({ ...prev, [symbol]: q })); });
+    });
+  }, [marketTab]);
+
+  return (
+    <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest flex items-center gap-2">
+          <Globe size={13} /> Markets
+        </h3>
+        <div className="flex gap-1">
+          {(['us', 'india', 'crypto'] as const).map(t => (
+            <button key={t} onClick={() => setMarketTab(t)}
+              className={"px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-colors " + (marketTab === t ? "bg-blue-600 text-white" : "text-[#5a6a8a] hover:text-white")}>
+              {t === 'us' ? '🇺🇸 US' : t === 'india' ? '🇮🇳 India' : '₿ Crypto'}
+            </button>
+          ))}
+        </div>
+      </div>
+      {marketTab === 'crypto' ? (
+        <CryptoPanel onSelect={onSelect} />
+      ) : (
+        <div className="space-y-2">
+          {stocks.map(({ symbol, name }) => {
+            const q = quotes[symbol];
+            const isUp = q ? q.dp >= 0 : true;
+            const displaySym = symbol.replace('NSE:', '');
+            return (
+              <div key={symbol} onClick={() => onSelect(symbol)}
+                className="flex items-center justify-between p-3 bg-[#080b14] rounded-xl cursor-pointer hover:bg-[#1a2444]/40 transition-colors">
+                <div>
+                  <p className="text-sm font-bold text-white">{displaySym}</p>
+                  <p className="text-xs text-[#5a6a8a]">{name}</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <Sparkline data={Array.from({length: 12}, () => (q?.c || 100) + (Math.random()-0.5)*5)} color={isUp ? '#10b981' : '#ef4444'} />
+                  <div className="text-right min-w-[80px]">
+                    <p className="text-sm font-bold text-white">{q ? '$' + q.c.toFixed(2) : '—'}</p>
+                    <p className={"text-xs font-semibold " + (isUp ? "text-emerald-400" : "text-red-400")}>
+                      {q ? (q.dp >= 0 ? '+' : '') + q.dp.toFixed(2) + '%' : ''}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+function SettingsPage() {
+  const { theme, toggleTheme } = useStore();
   const [loading, setLoading] = useState(false);
 
   const handleUpgrade = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/checkout", { method: "POST" });
+      const res = await fetch('/api/checkout', { method: 'POST' });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
-    } catch {
-      alert("Payment unavailable. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+    } catch { alert('Payment unavailable.'); }
+    finally { setLoading(false); }
   };
 
   return (
-    <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/20 rounded-2xl p-4 flex items-center justify-between">
-      <div>
-        <p className="text-sm font-semibold text-white">Upgrade to Pro</p>
-        <p className="text-xs text-slate-400 mt-0.5">Real-time data, alerts and advanced analytics</p>
+    <div className="space-y-5 max-w-2xl">
+      <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5 space-y-4"}>
+        <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest flex items-center gap-2">
+          <Settings size={13} /> Preferences
+        </h3>
+        <div className="flex items-center justify-between py-3 border-b border-[#1a2444]">
+          <div>
+            <p className="text-sm font-semibold text-white">Theme</p>
+            <p className="text-xs text-[#5a6a8a]">Currently {theme} mode</p>
+          </div>
+          <button onClick={toggleTheme}
+            className="flex items-center gap-2 px-4 py-2 bg-[#080b14] border border-[#1a2444] rounded-xl text-xs text-white hover:border-blue-500 transition-colors">
+            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+            {theme === 'dark' ? 'Light' : 'Dark'}
+          </button>
+        </div>
+        <div className="flex items-center justify-between py-3 border-b border-[#1a2444]">
+          <div>
+            <p className="text-sm font-semibold text-white">Data refresh</p>
+            <p className="text-xs text-[#5a6a8a]">Chart updates every 3 seconds</p>
+          </div>
+          <span className="flex items-center gap-1 text-xs text-emerald-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" /> Live
+          </span>
+        </div>
+        <div className="flex items-center justify-between py-3">
+          <div>
+            <p className="text-sm font-semibold text-white">Data source</p>
+            <p className="text-xs text-[#5a6a8a]">Finnhub API · Free tier (demo mode if no key set)</p>
+          </div>
+          <a href="https://finnhub.io" target="_blank" rel="noopener noreferrer"
+            className="text-xs text-blue-400 hover:text-blue-300 transition-colors">Get API key →</a>
+        </div>
       </div>
-      <button
-        onClick={handleUpgrade}
-        disabled={loading}
-        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-colors"
-      >
-        <CreditCard size={14} />
-        {loading ? "Redirecting..." : "$19 / mo"}
-      </button>
+
+      <div className="bg-gradient-to-br from-blue-600/20 to-purple-600/20 border border-blue-500/20 rounded-2xl p-6">
+        <div className="flex items-start gap-4">
+          <Zap size={24} className="text-blue-400 mt-1 shrink-0" />
+          <div className="flex-1">
+            <h3 className="text-base font-bold text-white mb-1">Upgrade to StockPro Premium</h3>
+            <p className="text-xs text-slate-400 mb-4">Real-time streaming data, unlimited alerts, advanced screener, options chain, and priority support.</p>
+            <ul className="space-y-1.5 mb-5">
+              {['Real-time WebSocket data', 'Unlimited price alerts', 'Options chain viewer', 'Advanced stock screener', 'Priority support'].map(f => (
+                <li key={f} className="flex items-center gap-2 text-xs text-slate-300">
+                  <CheckCircle size={12} className="text-emerald-400 shrink-0" /> {f}
+                </li>
+              ))}
+            </ul>
+            <button onClick={handleUpgrade} disabled={loading}
+              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-bold rounded-xl transition-colors">
+              <CreditCard size={15} /> {loading ? 'Redirecting...' : 'Upgrade — $19/mo'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Chart View ───────────────────────────────────────────────────────────
+function ChartView({ symbol }: { symbol: string }) {
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [candles, setCandles] = useState<Candle[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(() => {
+    setRefreshing(true);
+    const base = symbol === 'AAPL' ? 170 : symbol === 'TSLA' ? 250 : symbol === 'MSFT' ? 380 : symbol === 'NVDA' ? 900 : 150;
+    getQuote(symbol).then(q => { if (q && q.c) setQuote(q); });
+    getCandles(symbol, 'D', 90).then(c => {
+      setCandles(c.length > 0 ? c : generateMockCandles(base));
+      setRefreshing(false);
+    });
+  }, [symbol]);
+
+  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
+
+  const isUp = quote ? quote.dp >= 0 : true;
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-3xl font-black text-white tracking-tight">{symbol.replace('NSE:', '')}</h2>
+            {quote && (
+              <>
+                <span className="text-3xl font-bold text-white">${quote.c.toFixed(2)}</span>
+                <span className={"flex items-center gap-1 text-lg font-bold px-3 py-1 rounded-xl " + (isUp ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400")}>
+                  {isUp ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                  {isUp ? '+' : ''}{quote.d.toFixed(2)} ({quote.dp.toFixed(2)}%)
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-4 mt-2 text-xs text-[#5a6a8a]">
+            {quote && <>
+              <span>O: ${quote.o.toFixed(2)}</span>
+              <span>H: ${quote.h.toFixed(2)}</span>
+              <span>L: ${quote.l.toFixed(2)}</span>
+              <span>Prev: ${quote.pc.toFixed(2)}</span>
+            </>}
+          </div>
+        </div>
+        <button onClick={load} disabled={refreshing}
+          className="flex items-center gap-2 px-4 py-2 bg-[#0f1629] border border-[#1a2444] rounded-xl text-xs text-[#5a6a8a] hover:text-white hover:border-blue-500 transition-colors">
+          <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} /> Refresh
+        </button>
+      </div>
+
+      {/* Chart */}
+      <CandlestickChart candles={candles} symbol={symbol} />
+
+      {/* Fundamentals */}
+      <FundamentalsPanel symbol={symbol} />
     </div>
   );
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
+type Tab = 'dashboard' | 'portfolio' | 'watchlist' | 'screener' | 'crypto' | 'settings';
+
 function Dashboard() {
   const { user } = useUser();
-  const { portfolio, balance } = useStore();
-  const [symbol, setSymbol] = useState("AAPL");
-  const [search, setSearch] = useState("");
+  const { activeSymbol, setActiveSymbol, theme, toggleTheme } = useStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "portfolio" | "watchlist">("dashboard");
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [showSearch, setShowSearch] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
 
-  const portfolioValue = portfolio.reduce((acc, s) => acc + s.price * s.quantity, 0);
+  useEffect(() => {
+    if (searchQuery.length < 2) { setSearchResults([]); return; }
+    const t = setTimeout(() => {
+      searchSymbol(searchQuery).then(setSearchResults);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (search.trim()) {
-      setSymbol(search.trim().toUpperCase());
-      setSearch("");
-    }
+  const handleSelect = (sym: string) => {
+    setActiveSymbol(sym);
+    setActiveTab('dashboard');
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearch(false);
   };
 
-  const navItems = [
-    { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
-    { id: "portfolio" as const, label: "Portfolio", icon: Wallet },
-    { id: "watchlist" as const, label: "Watchlist", icon: Star },
+  const nav: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
+    { id: 'portfolio', label: 'Portfolio', icon: <Wallet size={16} /> },
+    { id: 'watchlist', label: 'Watchlist', icon: <Star size={16} /> },
+    { id: 'screener', label: 'Screener', icon: <Filter size={16} /> },
+    { id: 'crypto', label: 'Crypto', icon: <Bitcoin size={16} /> },
+    { id: 'settings', label: 'Settings', icon: <Settings size={16} /> },
   ];
 
   return (
-    <div className="flex h-screen bg-slate-950 overflow-hidden">
+    <div className={"flex h-screen overflow-hidden " + (theme === 'dark' ? 'bg-[#080b14]' : 'bg-slate-100')}>
       {/* Sidebar */}
       <motion.aside
-        animate={{ width: sidebarOpen ? 220 : 72 }}
-        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        className="bg-slate-900 border-r border-slate-800 flex flex-col py-5 overflow-hidden shrink-0"
+        animate={{ width: sidebarOpen ? 220 : 68 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        className="bg-[#0c1020] border-r border-[#1a2444] flex flex-col py-5 overflow-hidden shrink-0 z-10"
       >
         <div className="flex items-center justify-between px-4 mb-8">
           <AnimatePresence>
             {sidebarOpen && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="flex items-center gap-2">
-                <TrendingUp className="text-blue-500 shrink-0" size={20} />
-                <span className="font-bold text-white text-lg tracking-tight whitespace-nowrap">StockPro</span>
+                <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
+                  <TrendingUp size={14} className="text-white" />
+                </div>
+                <span className="font-black text-white text-base tracking-tight whitespace-nowrap">StockPro</span>
               </motion.div>
             )}
           </AnimatePresence>
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 hover:bg-slate-800 rounded-xl text-slate-400 transition-colors shrink-0"
-          >
-            {sidebarOpen ? <X size={16} /> : <Menu size={16} />}
+          <button onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 hover:bg-[#1a2444] rounded-xl text-[#5a6a8a] transition-colors shrink-0">
+            {sidebarOpen ? <X size={15} /> : <Menu size={15} />}
           </button>
         </div>
 
-        <nav className="flex flex-col gap-1 px-3 flex-1">
-          {navItems.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              className={"flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors text-sm font-medium " + (activeTab === id ? "bg-blue-600 text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white")}
-            >
-              <Icon size={17} className="shrink-0" />
+        <nav className="flex flex-col gap-0.5 px-3 flex-1">
+          {nav.map(({ id, label, icon }) => (
+            <button key={id} onClick={() => setActiveTab(id)}
+              className={"flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium " + (activeTab === id ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" : "text-[#5a6a8a] hover:bg-[#1a2444] hover:text-white")}>
+              <span className="shrink-0">{icon}</span>
               <AnimatePresence>
                 {sidebarOpen && (
                   <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -406,91 +851,95 @@ function Dashboard() {
           ))}
         </nav>
 
-        <div className="px-4 border-t border-slate-800 pt-4 flex items-center gap-3">
-          <UserButton afterSignOutUrl="/" />
-          <AnimatePresence>
-            {sidebarOpen && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <p className="text-sm font-semibold text-white truncate max-w-[120px]">
-                  {user?.firstName || "Trader"}
-                </p>
-                <p className="text-xs text-emerald-400">Pro Plan</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+        <div className="px-3 pt-4 border-t border-[#1a2444]">
+          <div className="flex items-center gap-3 px-2">
+            <UserButton afterSignOutUrl="/" />
+            <AnimatePresence>
+              {sidebarOpen && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <p className="text-xs font-bold text-white truncate max-w-[110px]">{user?.firstName || 'Trader'}</p>
+                  <p className="text-[10px] text-emerald-400">Pro Plan</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </motion.aside>
 
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-slate-900/60 backdrop-blur border-b border-slate-800 px-6 py-3 flex justify-between items-center shrink-0">
-          <h2 className="text-lg font-bold text-white capitalize">{activeTab}</h2>
-          <form onSubmit={handleSearch} className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value.toUpperCase())}
-              placeholder="Search symbol..."
-              maxLength={5}
-              className="pl-9 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm w-56 focus:ring-2 focus:ring-blue-500 outline-none text-white placeholder-slate-500 uppercase"
-            />
-          </form>
+        {/* Header */}
+        <header className="bg-[#0c1020]/80 backdrop-blur-xl border-b border-[#1a2444] px-6 py-3 flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-bold text-white capitalize">{activeTab}</h2>
+            {activeTab === 'dashboard' && (
+              <span className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" /> Live
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Search */}
+            <div ref={searchRef} className="relative">
+              <div className="flex items-center gap-2 bg-[#0f1629] border border-[#1a2444] rounded-xl px-3 py-2 w-56 focus-within:border-blue-500 transition-colors">
+                <Search size={14} className="text-[#5a6a8a] shrink-0" />
+                <input
+                  value={searchQuery}
+                  onChange={e => { setSearchQuery(e.target.value.toUpperCase()); setShowSearch(true); }}
+                  onFocus={() => setShowSearch(true)}
+                  placeholder="Search symbol..."
+                  className="bg-transparent text-xs text-white placeholder-[#5a6a8a] outline-none w-full"
+                />
+              </div>
+              <AnimatePresence>
+                {showSearch && searchResults.length > 0 && (
+                  <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
+                    className="absolute top-full mt-2 left-0 w-72 bg-[#0f1629] border border-[#1a2444] rounded-2xl shadow-2xl overflow-hidden z-50">
+                    {searchResults.map(r => (
+                      <button key={r.symbol} onClick={() => handleSelect(r.symbol)}
+                        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[#1a2444] transition-colors text-left">
+                        <div>
+                          <span className="text-xs font-bold text-white">{r.symbol}</span>
+                          <span className="text-[10px] text-[#5a6a8a] ml-2 block">{r.description}</span>
+                        </div>
+                        <span className="text-[10px] text-[#5a6a8a] bg-[#1a2444] px-2 py-0.5 rounded-lg shrink-0">{r.type}</span>
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+            <button onClick={toggleTheme}
+              className="p-2 bg-[#0f1629] border border-[#1a2444] rounded-xl text-[#5a6a8a] hover:text-white hover:border-blue-500 transition-colors">
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+          </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-950">
-          {activeTab === "dashboard" && (
-            <div className="space-y-5 max-w-7xl mx-auto">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard label="Balance" value={"$" + balance.toLocaleString()} sub="Available cash" />
-                <StatCard label="Portfolio" value={"$" + portfolioValue.toLocaleString()} sub={portfolio.length + " positions"} />
-                <StatCard label="Day P/L" value="+2.4%" positive={true} sub="vs yesterday" />
-                <StatCard label="All-time" value="+18.7%" positive={true} sub="since inception" />
+        {/* Content */}
+        <main className="flex-1 overflow-y-auto p-6 bg-[#080b14]">
+          {activeTab === 'dashboard' && (
+            <div className="grid grid-cols-1 xl:grid-cols-4 gap-5 max-w-[1600px] mx-auto">
+              <div className="xl:col-span-3 space-y-5">
+                <ChartView symbol={activeSymbol} />
+                <MarketsGrid onSelect={handleSelect} />
               </div>
-              <UpgradeBanner />
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
-                <div className="lg:col-span-3 space-y-5">
-                  <TechnicalChart symbol={symbol} />
-                  <AnalystRatings />
-                </div>
-                <div className="space-y-5">
-                  <WatchlistPanel onSelect={setSymbol} selected={symbol} />
-                  <NewsFeed />
-                </div>
+              <div className="space-y-5">
+                <WatchlistPanel onSelect={handleSelect} selected={activeSymbol} />
+                <AlertsPanel />
+                <NewsFeed symbol={activeSymbol} />
               </div>
             </div>
           )}
-
-          {activeTab === "portfolio" && (
-            <div className="max-w-3xl mx-auto space-y-4">
-              <h3 className="text-white font-bold text-lg">Your Positions</h3>
-              {portfolio.length === 0 ? (
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center">
-                  <BarChart2 size={36} className="text-slate-600 mx-auto mb-3" />
-                  <p className="text-slate-400 text-sm">No positions yet. Search for a symbol to get started.</p>
-                </div>
-              ) : (
-                portfolio.map((s) => (
-                  <div key={s.symbol} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex justify-between items-center">
-                    <div>
-                      <p className="font-bold text-white">{s.symbol}</p>
-                      <p className="text-xs text-slate-400">{s.quantity} shares @ ${s.price}</p>
-                    </div>
-                    <p className="font-semibold text-white">${(s.price * s.quantity).toFixed(2)}</p>
-                  </div>
-                ))
-              )}
+          {activeTab === 'portfolio' && <PortfolioPage onSelect={handleSelect} />}
+          {activeTab === 'watchlist' && (
+            <div className="max-w-lg">
+              <WatchlistPanel onSelect={handleSelect} selected={activeSymbol} />
             </div>
           )}
-
-          {activeTab === "watchlist" && (
-            <div className="max-w-lg mx-auto">
-              <WatchlistPanel
-                onSelect={(s) => { setSymbol(s); setActiveTab("dashboard"); }}
-                selected={symbol}
-              />
-            </div>
-          )}
+          {activeTab === 'screener' && <ScreenerPanel onSelect={handleSelect} />}
+          {activeTab === 'crypto' && <CryptoPanel onSelect={handleSelect} />}
+          {activeTab === 'settings' && <SettingsPage />}
         </main>
       </div>
     </div>
@@ -502,32 +951,36 @@ export default function Home() {
   const { isSignedIn, isLoaded } = useUser();
 
   if (!isLoaded) return (
-    <div className="h-screen flex items-center justify-center bg-slate-950">
+    <div className="h-screen flex items-center justify-center bg-[#080b14]">
       <div className="flex flex-col items-center gap-4">
-        <TrendingUp className="text-blue-500 animate-pulse" size={36} />
-        <p className="text-slate-400 text-sm">Loading...</p>
+        <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center animate-pulse">
+          <TrendingUp size={20} className="text-white" />
+        </div>
+        <p className="text-[#5a6a8a] text-sm">Loading StockPro...</p>
       </div>
     </div>
   );
 
   if (!isSignedIn) return (
-    <div className="h-screen flex flex-col items-center justify-center bg-slate-950 px-4">
+    <div className="h-screen flex flex-col items-center justify-center bg-[#080b14] px-4">
       <div className="mb-10 text-center">
-        <div className="flex items-center justify-center gap-3 mb-3">
-          <TrendingUp className="text-blue-500" size={32} />
-          <h1 className="text-4xl font-bold text-white tracking-tight">StockPro</h1>
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center">
+            <TrendingUp size={24} className="text-white" />
+          </div>
+          <h1 className="text-5xl font-black text-white tracking-tight">StockPro</h1>
         </div>
-        <p className="text-slate-400">Professional stock monitoring and portfolio tracking</p>
+        <p className="text-[#5a6a8a] text-sm">Professional stock monitoring · US · India · Crypto</p>
       </div>
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl w-full max-w-sm">
+      <div className="bg-[#0c1020] border border-[#1a2444] p-6 rounded-2xl shadow-2xl w-full max-w-sm">
         <SignIn routing="hash" appearance={{
           elements: {
-            formButtonPrimary: "bg-blue-600 hover:bg-blue-500 text-white w-full rounded-xl",
-            card: "bg-transparent shadow-none",
-            headerTitle: "text-white font-bold",
-            headerSubtitle: "text-slate-400",
-            formFieldInput: "bg-slate-800 border-slate-700 text-white rounded-xl",
-            footerActionLink: "text-blue-400 hover:text-blue-300",
+            formButtonPrimary: 'bg-blue-600 hover:bg-blue-500 text-white w-full rounded-xl',
+            card: 'bg-transparent shadow-none',
+            headerTitle: 'text-white font-bold',
+            headerSubtitle: 'text-[#5a6a8a]',
+            formFieldInput: 'bg-[#080b14] border-[#1a2444] text-white rounded-xl',
+            footerActionLink: 'text-blue-400 hover:text-blue-300',
           },
         }} />
       </div>
