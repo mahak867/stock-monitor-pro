@@ -3,7 +3,7 @@ import axios from 'axios';
 const KEY = process.env.NEXT_PUBLIC_FINNHUB_API_KEY || 'demo';
 const BASE = 'https://finnhub.io/api/v1';
 
-// ── Quote ─────────────────────────────────────────────────────────────────────
+// Quote
 export interface Quote {
   c: number; d: number; dp: number; h: number; l: number; o: number; pc: number;
 }
@@ -14,7 +14,7 @@ export const getQuote = async (symbol: string): Promise<Quote | null> => {
   } catch { return null; }
 };
 
-// ── Candles (OHLC) ────────────────────────────────────────────────────────────
+// Candles (OHLC)
 export interface Candle {
   t: number; o: number; h: number; l: number; c: number; v: number;
 }
@@ -36,7 +36,7 @@ export const getCandles = async (
   } catch { return []; }
 };
 
-// ── Company Fundamentals ──────────────────────────────────────────────────────
+// Company Profile
 export interface Fundamentals {
   name: string; ticker: string; exchange: string; ipo: string;
   marketCapitalization: number; shareOutstanding: number;
@@ -49,40 +49,46 @@ export const getFundamentals = async (symbol: string): Promise<Fundamentals | nu
   } catch { return null; }
 };
 
-// ── Financial Metrics ─────────────────────────────────────────────────────────
+// Financial Metrics
 export interface Metrics {
-  peNormalizedAnnual?: number; epsNormalizedAnnual?: number;
-  revenueGrowthAnnual?: number; grossMarginAnnual?: number;
-  52WeekHigh?: number; 52WeekLow?: number; beta?: number;
-  dividendYieldIndicatedAnnual?: number; marketCapitalization?: number;
-  roaRfy?: number; roeRfy?: number;
+  peNormalizedAnnual?: number;
+  epsNormalizedAnnual?: number;
+  revenueGrowthAnnual?: number;
+  grossMarginAnnual?: number;
+  weekHigh52?: number;
+  weekLow52?: number;
+  beta?: number;
+  dividendYieldIndicatedAnnual?: number;
+  marketCapitalization?: number;
+  roaRfy?: number;
+  roeRfy?: number;
 }
 export const getMetrics = async (symbol: string): Promise<Metrics | null> => {
   try {
     const r = await axios.get(`${BASE}/stock/metric?symbol=${symbol}&metric=all&token=${KEY}`);
-    return r.data.metric || null;
+    const m = r.data.metric || {};
+    return {
+      peNormalizedAnnual: m.peNormalizedAnnual,
+      epsNormalizedAnnual: m.epsNormalizedAnnual,
+      revenueGrowthAnnual: m.revenueGrowthAnnual,
+      grossMarginAnnual: m.grossMarginAnnual,
+      weekHigh52: m['52WeekHigh'],
+      weekLow52: m['52WeekLow'],
+      beta: m.beta,
+      dividendYieldIndicatedAnnual: m.dividendYieldIndicatedAnnual,
+      marketCapitalization: m.marketCapitalization,
+      roaRfy: m.roaRfy,
+      roeRfy: m.roeRfy,
+    };
   } catch { return null; }
 };
 
-// ── News ──────────────────────────────────────────────────────────────────────
+// News with sentiment
 export interface NewsItem {
   id: number; headline: string; source: string;
   datetime: number; url: string; summary: string; image: string;
   sentiment?: 'positive' | 'negative' | 'neutral';
 }
-export const getNews = async (symbol?: string): Promise<NewsItem[]> => {
-  try {
-    const url = symbol
-      ? `${BASE}/company-news?symbol=${symbol}&from=${new Date(Date.now()-7*86400000).toISOString().slice(0,10)}&to=${new Date().toISOString().slice(0,10)}&token=${KEY}`
-      : `${BASE}/news?category=general&token=${KEY}`;
-    const r = await axios.get(url);
-    const items: NewsItem[] = (r.data || []).slice(0, 10).map((n: NewsItem) => ({
-      ...n,
-      sentiment: scoreSentiment(n.headline),
-    }));
-    return items;
-  } catch { return []; }
-};
 
 function scoreSentiment(text: string): 'positive' | 'negative' | 'neutral' {
   const pos = /rally|surge|gain|rise|beat|upgrade|strong|bull|growth|record|high/i;
@@ -92,7 +98,22 @@ function scoreSentiment(text: string): 'positive' | 'negative' | 'neutral' {
   return 'neutral';
 }
 
-// ── Search ────────────────────────────────────────────────────────────────────
+export const getNews = async (symbol?: string): Promise<NewsItem[]> => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const url = symbol
+      ? `${BASE}/company-news?symbol=${symbol}&from=${weekAgo}&to=${today}&token=${KEY}`
+      : `${BASE}/news?category=general&token=${KEY}`;
+    const r = await axios.get(url);
+    return (r.data || []).slice(0, 10).map((n: NewsItem) => ({
+      ...n,
+      sentiment: scoreSentiment(n.headline),
+    }));
+  } catch { return []; }
+};
+
+// Symbol search
 export interface SearchResult { symbol: string; description: string; type: string; }
 export const searchSymbol = async (q: string): Promise<SearchResult[]> => {
   try {
@@ -101,7 +122,7 @@ export const searchSymbol = async (q: string): Promise<SearchResult[]> => {
   } catch { return []; }
 };
 
-// ── Crypto ────────────────────────────────────────────────────────────────────
+// Crypto quotes
 export interface CryptoQuote { c: number; d: number; dp: number; }
 const CRYPTO_MAP: Record<string, string> = {
   BTC: 'BINANCE:BTCUSDT', ETH: 'BINANCE:ETHUSDT',
@@ -116,10 +137,10 @@ export const getCryptoQuote = async (symbol: string): Promise<CryptoQuote | null
   } catch { return null; }
 };
 
-// ── Indian Markets (NSE symbols via Finnhub) ──────────────────────────────────
+// Indian market stocks
 export const INDIAN_STOCKS = [
   { symbol: 'NSE:RELIANCE', name: 'Reliance Industries' },
-  { symbol: 'NSE:TCS', name: 'Tata Consultancy Services' },
+  { symbol: 'NSE:TCS', name: 'Tata Consultancy' },
   { symbol: 'NSE:HDFCBANK', name: 'HDFC Bank' },
   { symbol: 'NSE:INFY', name: 'Infosys' },
   { symbol: 'NSE:ICICIBANK', name: 'ICICI Bank' },
@@ -148,7 +169,7 @@ export const CRYPTO_LIST = [
   { symbol: 'ADA', name: 'Cardano' },
 ];
 
-// ── Mock OHLC fallback ────────────────────────────────────────────────────────
+// Mock candle fallback
 export const generateMockCandles = (base: number, days = 90): Candle[] => {
   let price = base;
   const now = Math.floor(Date.now() / 1000);

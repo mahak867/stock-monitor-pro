@@ -25,7 +25,7 @@ import {
   type Fundamentals, type Metrics, type SearchResult,
 } from "../lib/api";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+
 const fmt = (n: number | undefined, prefix = '') => {
   if (n === undefined || n === null || isNaN(n)) return '—';
   if (Math.abs(n) >= 1e9) return prefix + (n / 1e9).toFixed(2) + 'B';
@@ -40,7 +40,7 @@ const timeAgo = (ts: number) => {
   return Math.floor(diff / 1440) + 'd ago';
 };
 
-// ── Theme classes ─────────────────────────────────────────────────────────────
+
 const T = {
   bg: 'bg-[#080b14]',
   sidebar: 'bg-[#0c1020]',
@@ -53,7 +53,7 @@ const T = {
   red: 'text-red-400',
 };
 
-// ── Mini sparkline ────────────────────────────────────────────────────────────
+
 function Sparkline({ data, color }: { data: number[]; color: string }) {
   const min = Math.min(...data), max = Math.max(...data);
   const pts = data.map((v, i) => {
@@ -68,7 +68,7 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
   );
 }
 
-// ── Candlestick Chart ─────────────────────────────────────────────────────────
+
 function CandlestickChart({ candles, symbol }: { candles: Candle[]; symbol: string }) {
   const [chartType, setChartType] = useState<'candle' | 'area' | 'bar'>('area');
   const [range, setRange] = useState<'1W' | '1M' | '3M' | '1Y'>('3M');
@@ -144,7 +144,7 @@ function CandlestickChart({ candles, symbol }: { candles: Candle[]; symbol: stri
   );
 }
 
-// ── Fundamentals Panel ────────────────────────────────────────────────────────
+
 function FundamentalsPanel({ symbol }: { symbol: string }) {
   const [fund, setFund] = useState<Fundamentals | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
@@ -158,8 +158,8 @@ function FundamentalsPanel({ symbol }: { symbol: string }) {
     { label: 'P/E Ratio', value: fmt(metrics?.peNormalizedAnnual) },
     { label: 'EPS', value: fmt(metrics?.epsNormalizedAnnual, '$') },
     { label: 'Market Cap', value: fmt(metrics?.marketCapitalization, '$') },
-    { label: '52W High', value: fmt(metrics?.['52WeekHigh'], '$') },
-    { label: '52W Low', value: fmt(metrics?.['52WeekLow'], '$') },
+    { label: '52W High', value: fmt(metrics?.weekHigh52, '$') },
+    { label: '52W Low', value: fmt(metrics?.weekLow52, '$') },
     { label: 'Beta', value: fmt(metrics?.beta) },
     { label: 'Div Yield', value: metrics?.dividendYieldIndicatedAnnual ? metrics.dividendYieldIndicatedAnnual.toFixed(2) + '%' : '—' },
     { label: 'ROE', value: metrics?.roeRfy ? metrics.roeRfy.toFixed(1) + '%' : '—' },
@@ -186,7 +186,7 @@ function FundamentalsPanel({ symbol }: { symbol: string }) {
   );
 }
 
-// ── News Feed with sentiment ──────────────────────────────────────────────────
+
 function NewsFeed({ symbol }: { symbol?: string }) {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -238,7 +238,7 @@ function NewsFeed({ symbol }: { symbol?: string }) {
   );
 }
 
-// ── Alerts Panel ──────────────────────────────────────────────────────────────
+
 function AlertsPanel() {
   const { alerts, addAlert, removeAlert, toggleAlert } = useStore();
   const [sym, setSym] = useState('');
@@ -298,7 +298,7 @@ function AlertsPanel() {
   );
 }
 
-// ── Watchlist ─────────────────────────────────────────────────────────────────
+
 function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void; selected: string }) {
   const { watchlist, addToWatchlist, removeFromWatchlist } = useStore();
   const [input, setInput] = useState('');
@@ -369,7 +369,7 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
   );
 }
 
-// ── Stock Screener ────────────────────────────────────────────────────────────
+
 function ScreenerPanel({ onSelect }: { onSelect: (s: string) => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -433,7 +433,7 @@ function ScreenerPanel({ onSelect }: { onSelect: (s: string) => void }) {
   );
 }
 
-// ── Crypto Dashboard ──────────────────────────────────────────────────────────
+
 function CryptoPanel({ onSelect }: { onSelect: (s: string) => void }) {
   const [quotes, setQuotes] = useState<Record<string, { c: number; dp: number }>>({});
 
@@ -482,7 +482,7 @@ function CryptoPanel({ onSelect }: { onSelect: (s: string) => void }) {
   );
 }
 
-// ── Portfolio Page ────────────────────────────────────────────────────────────
+
 function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
   const { portfolio, balance, removePosition } = useStore();
 
@@ -575,7 +575,7 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
   );
 }
 
-// ── Markets Overview ──────────────────────────────────────────────────────────
+
 function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
   const { marketTab, setMarketTab } = useStore();
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
@@ -636,7 +636,7 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
   );
 }
 
-// ── Settings ──────────────────────────────────────────────────────────────────
+
 function SettingsPage() {
   const { theme, toggleTheme } = useStore();
   const [loading, setLoading] = useState(false);
@@ -711,7 +711,7 @@ function SettingsPage() {
   );
 }
 
-// ── Main Chart View ───────────────────────────────────────────────────────────
+
 function ChartView({ symbol }: { symbol: string }) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -772,7 +772,7 @@ function ChartView({ symbol }: { symbol: string }) {
   );
 }
 
-// ── Dashboard ─────────────────────────────────────────────────────────────────
+
 type Tab = 'dashboard' | 'portfolio' | 'watchlist' | 'screener' | 'crypto' | 'settings';
 
 function Dashboard() {
@@ -946,7 +946,7 @@ function Dashboard() {
   );
 }
 
-// ── Root ──────────────────────────────────────────────────────────────────────
+
 export default function Home() {
   const { isSignedIn, isLoaded } = useUser();
 
