@@ -1,4 +1,4 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 
 const KEY = process.env.NEXT_PUBLIC_FINNHUB_API_KEY || 'demo';
 const BASE = 'https://finnhub.io/api/v1';
@@ -10,9 +10,23 @@ export interface Quote {
 export const getQuote = async (symbol: string): Promise<Quote | null> => {
   try {
     const r = await axios.get(`${BASE}/quote?symbol=${symbol}&token=${KEY}`);
-    return r.data;
-  } catch { return null; }
+    if (r.data && typeof r.data.c === 'number' && r.data.c > 0) return r.data;
+    return generateMockQuote(symbol);
+  } catch { return generateMockQuote(symbol); }
 };
+
+function generateMockQuote(symbol: string): Quote {
+  const bases: Record<string, number> = {
+    AAPL: 171, MSFT: 380, GOOGL: 175, TSLA: 251, NVDA: 905,
+    AMZN: 185, META: 520, NFLX: 630, BTC: 67000, ETH: 3500,
+  };
+  const base = bases[symbol] || 150;
+  const c = parseFloat((base + (Math.random() - 0.5) * base * 0.01).toFixed(2));
+  const pc = parseFloat((base * 0.99).toFixed(2));
+  const d = parseFloat((c - pc).toFixed(2));
+  const dp = parseFloat(((d / pc) * 100).toFixed(2));
+  return { c, d, dp, h: c * 1.005, l: c * 0.995, o: pc, pc };
+}
 
 // Candles (OHLC)
 export interface Candle {
@@ -183,3 +197,4 @@ export const generateMockCandles = (base: number, days = 90): Candle[] => {
     return { t: now - (days - i) * 86400, o, h, l, c, v: Math.floor(Math.random() * 5000000) };
   });
 };
+

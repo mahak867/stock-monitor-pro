@@ -108,7 +108,7 @@ function CandlestickChart({ candles, symbol }: { candles: Candle[]; symbol: stri
         </div>
       </div>
 
-      <div className="h-72">
+      <div className="h-72 min-w-0">
         <ResponsiveContainer width="100%" height="100%">
           {chartType === 'bar' ? (
             <ComposedChart data={areaData}>
@@ -161,8 +161,8 @@ function FundamentalsPanel({ symbol }: { symbol: string }) {
     { label: '52W High', value: fmt(metrics?.weekHigh52, '$') },
     { label: '52W Low', value: fmt(metrics?.weekLow52, '$') },
     { label: 'Beta', value: fmt(metrics?.beta) },
-    { label: 'Div Yield', value: metrics?.dividendYieldIndicatedAnnual ? metrics.dividendYieldIndicatedAnnual.toFixed(2) + '%' : 'â€”' },
-    { label: 'ROE', value: metrics?.roeRfy ? metrics.roeRfy.toFixed(1) + '%' : 'â€”' },
+    { label: 'Div Yield', value: metrics?.dividendYieldIndicatedAnnual ? (metrics.dividendYieldIndicatedAnnual ?? 0).toFixed(2) + '%' : 'â€”' },
+    { label: 'ROE', value: metrics?.roeRfy ? (metrics.roeRfy ?? 0).toFixed(1) + '%' : 'â€”' },
   ];
 
   return (
@@ -228,7 +228,7 @@ function NewsFeed({ symbol }: { symbol?: string }) {
               <span className="mt-0.5 shrink-0">{sentimentIcon(item.sentiment)}</span>
               <div className="min-w-0">
                 <p className="text-xs font-medium text-slate-200 leading-snug line-clamp-2">{item.headline}</p>
-                <p className="text-[10px] text-[#5a6a8a] mt-0.5">{item.source} Â· {timeAgo(item.datetime)}</p>
+                <p className="text-[10px] text-[#5a6a8a] mt-0.5">{item.source} | {timeAgo(item.datetime)}</p>
               </div>
             </a>
           ))}
@@ -338,7 +338,7 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
       <div className="space-y-1.5 max-h-80 overflow-y-auto">
         {watchlist.map(({ symbol, name }) => {
           const q = quotes[symbol];
-          const isUp = q ? q.dp >= 0 : true;
+          const isUp = (q && typeof q.dp === 'number') ? q.dp >= 0 : true;
           return (
             <div key={symbol} onClick={() => onSelect(symbol)}
               className={"flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition-colors border " + (selected === symbol ? "bg-blue-600/10 border-blue-500/30" : "hover:bg-[#1a2444]/40 border-transparent")}>
@@ -351,9 +351,9 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
               <div className="flex items-center gap-3">
                 <Sparkline data={sparkData(symbol)} color={isUp ? '#10b981' : '#ef4444'} />
                 <div className="text-right min-w-[60px]">
-                  <p className="text-xs font-semibold text-white">{q ? '$' + q.c.toFixed(2) : 'â€”'}</p>
+                  <p className="text-xs font-semibold text-white">{q ? '$' + (q.c ?? 0).toFixed(2) : 'â€”'}</p>
                   <p className={"text-[10px] font-medium " + (isUp ? "text-emerald-400" : "text-red-400")}>
-                    {q ? (q.dp >= 0 ? '+' : '') + q.dp.toFixed(2) + '%' : ''}
+                    {q ? (q.dp >= 0 ? '+' : '') + (q.dp ?? 0).toFixed(2) + '%' : ''}
                   </p>
                 </div>
                 <button onClick={e => { e.stopPropagation(); removeFromWatchlist(symbol); }}
@@ -454,7 +454,7 @@ function CryptoPanel({ onSelect }: { onSelect: (s: string) => void }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {CRYPTO_LIST.map(({ symbol, name }) => {
             const q = quotes[symbol];
-            const isUp = q ? q.dp >= 0 : true;
+            const isUp = (q && typeof q.dp === 'number') ? q.dp >= 0 : true;
             return (
               <div key={symbol} onClick={() => onSelect(symbol)}
                 className="flex items-center justify-between bg-[#080b14] border border-[#1a2444] rounded-2xl p-4 cursor-pointer hover:border-blue-500/30 transition-all">
@@ -470,7 +470,7 @@ function CryptoPanel({ onSelect }: { onSelect: (s: string) => void }) {
                 <div className="text-right">
                   <p className="text-sm font-bold text-white">{q ? '$' + q.c.toLocaleString() : 'â€”'}</p>
                   <p className={"text-xs font-semibold " + (isUp ? "text-emerald-400" : "text-red-400")}>
-                    {q ? (q.dp >= 0 ? '+' : '') + q.dp.toFixed(2) + '%' : ''}
+                    {q ? (q.dp >= 0 ? '+' : '') + (q.dp ?? 0).toFixed(2) + '%' : ''}
                   </p>
                 </div>
               </div>
@@ -503,7 +503,7 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
         {[
           { label: 'Total Value', value: '$' + (totalValue + balance).toLocaleString(), sub: 'Portfolio + Cash' },
           { label: 'Invested', value: '$' + totalCost.toLocaleString(), sub: portfolio.length + ' positions' },
-          { label: 'Total P&L', value: (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(0), positive: totalPnl >= 0, sub: totalPnlPct.toFixed(2) + '%' },
+          { label: 'Total P&L', value: (totalPnl >= 0 ? '+' : '') + '$' + (totalPnl ?? 0).toFixed(0), positive: totalPnl >= 0, sub: (totalPnlPct ?? 0).toFixed(2) + '%' },
           { label: 'Cash Balance', value: '$' + balance.toLocaleString(), sub: 'Available' },
         ].map(({ label, value, sub, positive }) => (
           <div key={label} className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
@@ -517,7 +517,7 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
       {/* P&L Chart */}
       <div className={"rounded-2xl border " + T.border + " " + T.card + " p-5"}>
         <h3 className="text-xs font-bold text-[#5a6a8a] uppercase tracking-widest mb-4">Portfolio Value â€” Last 30 Days</h3>
-        <div className="h-40">
+        <div className="h-40 min-w-0">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={pnlHistory}>
               <defs>
@@ -546,8 +546,8 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
         ) : (
           <div className="space-y-2">
             {portfolio.map(p => {
-              const pnl = (p.currentPrice - p.avgPrice) * p.quantity;
-              const pct = ((p.currentPrice - p.avgPrice) / p.avgPrice) * 100;
+              const pnl = ((p.currentPrice || p.avgPrice || 0) - (p.avgPrice || 0)) * (p.quantity || 0);
+              const pct = p.avgPrice ? (((p.currentPrice || p.avgPrice) - p.avgPrice) / p.avgPrice) * 100 : 0;
               return (
                 <div key={p.symbol} onClick={() => onSelect(p.symbol)}
                   className="flex items-center justify-between bg-[#080b14] rounded-2xl p-4 cursor-pointer hover:bg-[#1a2444]/40 transition-colors">
@@ -558,7 +558,7 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
                   <div className="text-right">
                     <p className="text-sm font-bold text-white">${(p.currentPrice * p.quantity).toFixed(2)}</p>
                     <p className={"text-xs font-semibold " + (pnl >= 0 ? "text-emerald-400" : "text-red-400")}>
-                      {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} ({pct.toFixed(2)}%)
+                      {pnl >= 0 ? '+' : ''}${(pnl ?? 0).toFixed(2)} ({(pct ?? 0).toFixed(2)}%)
                     </p>
                   </div>
                   <button onClick={e => { e.stopPropagation(); removePosition(p.symbol); }}
@@ -608,7 +608,7 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
         <div className="space-y-2">
           {(marketTab === 'india' ? INDIAN_STOCKS : US_STOCKS).map(({ symbol, name }) => {
             const q = quotes[symbol];
-            const isUp = q ? q.dp >= 0 : true;
+            const isUp = (q && typeof q.dp === 'number') ? q.dp >= 0 : true;
             const displaySym = symbol.replace('NSE:', '');
             return (
               <div key={symbol} onClick={() => onSelect(symbol)}
@@ -620,9 +620,9 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
                 <div className="flex items-center gap-4">
                   <Sparkline data={Array.from({length: 12}, () => (q?.c || 100) + (Math.random()-0.5)*5)} color={isUp ? '#10b981' : '#ef4444'} />
                   <div className="text-right min-w-[80px]">
-                    <p className="text-sm font-bold text-white">{q ? '$' + q.c.toFixed(2) : 'â€”'}</p>
+                    <p className="text-sm font-bold text-white">{q ? '$' + (q.c ?? 0).toFixed(2) : 'â€”'}</p>
                     <p className={"text-xs font-semibold " + (isUp ? "text-emerald-400" : "text-red-400")}>
-                      {q ? (q.dp >= 0 ? '+' : '') + q.dp.toFixed(2) + '%' : ''}
+                      {q ? (q.dp >= 0 ? '+' : '') + (q.dp ?? 0).toFixed(2) + '%' : ''}
                     </p>
                   </div>
                 </div>
@@ -679,7 +679,7 @@ function SettingsPage() {
         <div className="flex items-center justify-between py-3">
           <div>
             <p className="text-sm font-semibold text-white">Data source</p>
-            <p className="text-xs text-[#5a6a8a]">Finnhub API Â· Free tier (demo mode if no key set)</p>
+            <p className="text-xs text-[#5a6a8a]">Finnhub API | Free tier (demo mode if no key set)</p>
           </div>
           <a href="https://finnhub.io" target="_blank" rel="noopener noreferrer"
             className="text-xs text-blue-400 hover:text-blue-300 transition-colors">Get API key â†’</a>
@@ -739,20 +739,20 @@ function ChartView({ symbol }: { symbol: string }) {
             <h2 className="text-3xl font-black text-white tracking-tight">{symbol.replace('NSE:', '')}</h2>
             {quote && (
               <>
-                <span className="text-3xl font-bold text-white">${quote.c.toFixed(2)}</span>
+                <span className="text-3xl font-bold text-white">${(quote.c ?? 0).toFixed(2)}</span>
                 <span className={"flex items-center gap-1 text-lg font-bold px-3 py-1 rounded-xl " + (isUp ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400")}>
                   {isUp ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
-                  {isUp ? '+' : ''}{quote.d.toFixed(2)} ({quote.dp.toFixed(2)}%)
+                  {isUp ? '+' : ''}{(quote.d ?? 0).toFixed(2)} ({(quote.dp ?? 0).toFixed(2)}%)
                 </span>
               </>
             )}
           </div>
           <div className="flex items-center gap-4 mt-2 text-xs text-[#5a6a8a]">
             {quote && <>
-              <span>O: ${quote.o.toFixed(2)}</span>
-              <span>H: ${quote.h.toFixed(2)}</span>
-              <span>L: ${quote.l.toFixed(2)}</span>
-              <span>Prev: ${quote.pc.toFixed(2)}</span>
+              <span>O: ${(quote.o ?? 0).toFixed(2)}</span>
+              <span>H: ${(quote.h ?? 0).toFixed(2)}</span>
+              <span>L: ${(quote.l ?? 0).toFixed(2)}</span>
+              <span>Prev: ${(quote.pc ?? 0).toFixed(2)}</span>
             </>}
           </div>
         </div>
@@ -969,7 +969,7 @@ export default function Home() {
           </div>
           <h1 className="text-5xl font-black text-white tracking-tight">StockPro</h1>
         </div>
-        <p className="text-[#5a6a8a] text-sm">Professional stock monitoring Â· US Â· India Â· Crypto</p>
+        <p className="text-[#5a6a8a] text-sm">Professional stock monitoring | US | India | Crypto</p>
       </div>
       <div className="bg-[#0c1020] border border-[#1a2444] p-6 rounded-2xl shadow-2xl w-full max-w-sm">
         <SignIn routing="hash" appearance={{
