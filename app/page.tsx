@@ -58,12 +58,10 @@ function BubbleBg() {
           animate={{ y: [0, -30, 0], scale: [1, 1.08, 1], opacity: [0.4, 0.7, 0.4] }}
           transition={{ duration: b.dur, repeat: Infinity, delay: b.delay, ease: 'easeInOut' }}
           style={{ position: 'absolute', left: b.x + '%', top: b.y + '%', width: b.size, height: b.size }}
-          className="rounded-full border border-cyan-500/10"
-          children={
+          className="rounded-full border border-cyan-500/10">
             <div className="w-full h-full rounded-full"
               style={{ background: 'radial-gradient(circle at 30% 30%, rgba(0,212,255,0.04), transparent 70%)' }} />
-          }
-        />
+          </motion.div>
       ))}
       <div className="absolute inset-0 grid-bg opacity-100" />
       <div className="absolute top-0 left-1/4 w-96 h-96 rounded-full"
@@ -702,9 +700,8 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const [loading, setLoading] = useState(true);
 
-  const stocks = marketTab === 'india' ? INDIAN_STOCKS : marketTab === 'crypto' ? CRYPTO_LIST.map(c => ({ ...c, sector: 'Crypto' })) : US_STOCKS;
-
   useEffect(() => {
+    const stocks = marketTab === 'india' ? INDIAN_STOCKS : marketTab === 'crypto' ? CRYPTO_LIST.map(c => ({ ...c, sector: 'Crypto' })) : US_STOCKS;
     setLoading(true);
     setQuotes({});
     const fn = marketTab === 'crypto' ? getCryptoQuote : getQuote;
@@ -744,7 +741,7 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
             <div key={i} className="animate-pulse h-12 bg-[#040810] rounded-xl" />
           ))
         ) : (
-          stocks.map(({ symbol, name }) => {
+          (marketTab === 'india' ? INDIAN_STOCKS : marketTab === 'crypto' ? CRYPTO_LIST.map(c => ({ ...c, sector: 'Crypto' })) : US_STOCKS).map(({ symbol, name }) => {
             const q = quotes[symbol];
             const up = n(q?.dp) >= 0;
             const hist = [n(q?.pc) * 0.99, n(q?.pc), n(q?.o), n(q?.l), n(q?.c)];
@@ -1029,10 +1026,9 @@ export default function Home() {
   const [currentPrices, setCurrentPrices] = useState<Record<string, number>>({});
   const searchRef = useRef<HTMLDivElement>(null);
 
-  const tickerSymbols = ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'GOOGL', 'BTC', 'ETH', 'NSE:RELIANCE', 'NSE:TCS'];
-
   useEffect(() => {
     if (!isSignedIn) return;
+    const tickerSymbols = ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'GOOGL', 'BTC', 'ETH', 'NSE:RELIANCE', 'NSE:TCS'];
     const load = () => {
       tickerSymbols.forEach(sym => {
         const fn = ['BTC', 'ETH'].includes(sym) ? getCryptoQuote : getQuote;
