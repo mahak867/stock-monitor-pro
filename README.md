@@ -305,6 +305,8 @@ To make specific routes public (e.g. a landing page), use `createRouteMatcher` f
 |---|---|---|
 | [Finnhub](https://finnhub.io/) | 60 calls/min | Live quotes, candles, news, symbol search, WebSocket |
 | [Anthropic Claude](https://anthropic.com/) | Pay-per-use | AI stock analysis and paper trade execution |
+| [Alpaca Markets](https://alpaca.markets/) | Free paper trading | Real paper & live market order execution |
+| [Resend](https://resend.com/) | 100 emails/day free | Branded price-alert email notifications |
 
 > If no Finnhub key is set, the app generates realistic **simulated data** locally — fully functional without any external calls.
 
@@ -336,7 +338,7 @@ Make sure to set `NEXT_PUBLIC_URL` to your production Vercel URL for Stripe redi
 - [ ] Advanced technical indicators (RSI, MACD, Bollinger Bands)
 - [ ] Options chain viewer
 - [ ] CSV portfolio export
-- [ ] Email/SMS alert notifications
+- [x] Email alert notifications (Resend)
 - [ ] Dark / light theme toggle
 - [ ] Mobile app (React Native)
 
