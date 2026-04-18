@@ -31,6 +31,12 @@ interface Store {
   claudeKey: string; setClaudeKey: (k: string) => void;
   recentSymbols: string[]; addRecent: (sym: string) => void;
   triggerAlert: (id: string) => void;
+  /** Alpaca brokerage integration */
+  alpacaKey: string; setAlpacaKey: (k: string) => void;
+  alpacaSecret: string; setAlpacaSecret: (s: string) => void;
+  alpacaMode: 'paper' | 'live'; setAlpacaMode: (m: 'paper' | 'live') => void;
+  /** Email for price-alert notifications */
+  notifyEmail: string; setNotifyEmail: (e: string) => void;
 }
 
 export const useStore = create<Store>()(persist(
@@ -77,6 +83,10 @@ export const useStore = create<Store>()(persist(
     recentSymbols: [],
     addRecent: (sym) => set((s) => ({ recentSymbols: [sym, ...s.recentSymbols.filter(x => x !== sym)].slice(0, 8) })),
     triggerAlert: (id) => set((s) => ({ alerts: s.alerts.map(x => x.id === id ? { ...x, active: false, triggered: true } : x) })),
+    alpacaKey: '', setAlpacaKey: (k) => set({ alpacaKey: k }),
+    alpacaSecret: '', setAlpacaSecret: (s) => set({ alpacaSecret: s }),
+    alpacaMode: 'paper', setAlpacaMode: (m) => set({ alpacaMode: m }),
+    notifyEmail: '', setNotifyEmail: (e) => set({ notifyEmail: e }),
   }),
   { name: 'qp-v4' }
 ));

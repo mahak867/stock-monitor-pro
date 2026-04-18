@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useUser, UserButton, SignIn } from "@clerk/nextjs";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid,
+  ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend,
 } from "recharts";
 import {
   TrendingUp, Search, Menu, X, Wallet,
@@ -12,6 +12,7 @@ import {
   Bell, Plus, Trash2, CreditCard, RefreshCw,
   ChevronUp, ChevronDown, Globe, Brain, Bot, Send,
   CheckCircle, AlertTriangle, Zap, ArrowUpRight, ArrowDownRight,
+  BarChart2, Mail, Activity,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "../lib/store";
@@ -732,6 +733,190 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
   );
 }
 
+
+// -- Portfolio Analytics -------------------------------------------------------
+const PIE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4', '#8b5cf6', '#ec4899', '#22d3ee'];
+
+function PortfolioAnalyticsPanel() {
+  const { portfolio, balance } = useStore();
+
+  if (portfolio.length === 0) return null;
+
+  const totalCost = portfolio.reduce((s, p) => s + safeN(p.avgPrice) * safeN(p.quantity), 0);
+  const totalVal  = portfolio.reduce((s, p) => s + safeN(p.currentPrice || p.avgPrice) * safeN(p.quantity), 0);
+  const pnl = totalVal - totalCost;
+  const pnlPct = totalCost ? (pnl / totalCost) * 100 : 0;
+
+  // Simulated returns for Sharpe (based on position P&L as a proxy)
+  const returns = portfolio.map(p => {
+    const cur = safeN(p.currentPrice || p.avgPrice);
+    const cost = safeN(p.avgPrice);
+    return cost ? (cur - cost) / cost : 0;
+  });
+  const avgReturn = returns.reduce((s, r) => s + r, 0) / (returns.length || 1);
+  const variance = returns.reduce((s, r) => s + (r - avgReturn) ** 2, 0) / (returns.length || 1);
+  const stdDev = Math.sqrt(variance);
+  const riskFreeDaily = 0.045 / 252;
+  const sharpeNum = stdDev > 0 ? (avgReturn - riskFreeDaily) / stdDev : null;
+  const sharpeStr = sharpeNum !== null ? sharpeNum.toFixed(2) : 'N/A';
+
+  // Max drawdown: worst single position P&L %
+  const drawdowns = returns.map(r => r < 0 ? r * 100 : 0);
+  const maxDrawdown = Math.min(0, ...drawdowns).toFixed(1);
+
+  // Best / worst position
+  const sorted = [...portfolio].sort((a, b) => {
+    const ra = safeN(a.avgPrice) ? (safeN(a.currentPrice || a.avgPrice) - safeN(a.avgPrice)) / safeN(a.avgPrice) : 0;
+    const rb = safeN(b.avgPrice) ? (safeN(b.currentPrice || b.avgPrice) - safeN(b.avgPrice)) / safeN(b.avgPrice) : 0;
+    return rb - ra;
+  });
+  const best  = sorted[0];
+  const worst = sorted[sorted.length - 1];
+
+  // Allocation data for pie
+  const alloc = portfolio.map(p => ({
+    name: p.symbol.replace('NSE:', ''),
+    value: Math.round(safeN(p.currentPrice || p.avgPrice) * safeN(p.quantity)),
+  }));
+  if (balance > 0) alloc.push({ name: 'Cash', value: Math.round(balance) });
+
+  const bestPct  = best  && safeN(best.avgPrice)  ? (safeN(best.currentPrice  || best.avgPrice)  - safeN(best.avgPrice))  / safeN(best.avgPrice)  * 100 : 0;
+  const worstPct = worst && safeN(worst.avgPrice) ? (safeN(worst.currentPrice || worst.avgPrice) - safeN(worst.avgPrice)) / safeN(worst.avgPrice) * 100 : 0;
+
+  return (
+    <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <BarChart2 size={14} color="#6366f1" />
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>Portfolio Analytics</span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 20 }}>
+        {[
+          { label: 'Total Return', val: (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%', color: pnlPct >= 0 ? '#10b981' : '#f43f5e' },
+          { label: 'Sharpe Ratio', val: sharpeStr, color: sharpeNum !== null && sharpeNum > 1 ? '#10b981' : '#f59e0b' },
+          { label: 'Max Drawdown', val: maxDrawdown + '%', color: parseFloat(maxDrawdown) < -10 ? '#f43f5e' : '#f59e0b' },
+          { label: 'Positions', val: String(portfolio.length), color: '#f1f5f9' },
+        ].map(({ label, val, color }) => (
+          <div key={label} style={{ background: '#06081a', borderRadius: 8, padding: '10px 14px' }}>
+            <div style={{ fontSize: 10, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color, fontFamily: 'DM Mono, monospace' }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Top Performer</div>
+          {best && (
+            <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>{best.symbol.replace('NSE:', '')}</div>
+              <div style={{ fontSize: 12, color: '#10b981', fontFamily: 'DM Mono, monospace', marginTop: 2 }}>{bestPct >= 0 ? '+' : ''}{bestPct.toFixed(2)}%</div>
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Worst Performer</div>
+          {worst && (
+            <div style={{ background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.15)', borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>{worst.symbol.replace('NSE:', '')}</div>
+              <div style={{ fontSize: 12, color: '#f43f5e', fontFamily: 'DM Mono, monospace', marginTop: 2 }}>{worstPct.toFixed(2)}%</div>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Allocation</div>
+          <div style={{ height: 170 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={alloc} cx="50%" cy="50%" innerRadius={38} outerRadius={62}
+                  dataKey="value" nameKey="name" paddingAngle={2} stroke="none">
+                  {alloc.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                </Pie>
+                <Tooltip
+                  contentStyle={{ background: '#0b0d1c', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, fontSize: 11, fontFamily: 'DM Mono, monospace' }}
+                  formatter={(v: unknown) => ['$' + safeN(v).toLocaleString(), 'Value']}
+                />
+                <Legend iconType="circle" iconSize={7}
+                  formatter={(v) => <span style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>{v}</span>} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -- Alpaca Live Trade -------------------------------------------------------
+function AlpacaTradePanel({ symbol }: { symbol: string }) {
+  const { alpacaKey, alpacaSecret, alpacaMode } = useStore();
+  const [qty, setQty] = useState('');
+  const [side, setSide] = useState<'buy' | 'sell'>('buy');
+  const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  if (!alpacaKey || !alpacaSecret) return null;
+
+  const place = async () => {
+    if (!qty || parseFloat(qty) <= 0) return;
+    setLoading(true); setStatus(null);
+    try {
+      const r = await fetch('/api/alpaca-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, qty: parseFloat(qty), side, apiKey: alpacaKey, apiSecret: alpacaSecret, mode: alpacaMode }),
+      });
+      const d = await r.json();
+      if (!r.ok) setStatus({ ok: false, msg: d.error || 'Order failed' });
+      else setStatus({ ok: true, msg: `Order #${d.id?.slice(0, 8)} submitted — ${d.status}` });
+    } catch { setStatus({ ok: false, msg: 'Network error' }); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Activity size={13} color="#10b981" />
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>Live Trade — Alpaca</span>
+        <span style={{
+          marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, letterSpacing: '0.04em',
+          background: alpacaMode === 'live' ? 'rgba(244,63,94,0.10)' : 'rgba(245,158,11,0.10)',
+          color: alpacaMode === 'live' ? '#f43f5e' : '#f59e0b',
+          border: `1px solid ${alpacaMode === 'live' ? 'rgba(244,63,94,0.22)' : 'rgba(245,158,11,0.22)'}`,
+        }}>{alpacaMode === 'live' ? '⚡ LIVE' : '📋 PAPER'}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        {(['buy', 'sell'] as const).map(s => (
+          <button key={s} onClick={() => setSide(s)}
+            style={{
+              flex: 1, padding: '7px 0', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              textTransform: 'uppercase', letterSpacing: '0.05em',
+              background: side === s ? (s === 'buy' ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)') : '#06081a',
+              color: side === s ? (s === 'buy' ? '#10b981' : '#f43f5e') : '#475569',
+              border: `1px solid ${side === s ? (s === 'buy' ? 'rgba(16,185,129,0.30)' : 'rgba(244,63,94,0.30)') : 'rgba(99,102,241,0.10)'}`,
+            }}>{s}</button>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <input value={qty} onChange={e => setQty(e.target.value)} type="number" min="1" placeholder="Qty"
+          style={{ flex: 1, background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', outline: 'none' }} />
+        <button onClick={place} disabled={loading || !qty}
+          style={{
+            padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none',
+            background: side === 'buy' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#f43f5e,#e11d48)',
+            color: '#fff', opacity: loading || !qty ? 0.5 : 1,
+          }}>{loading ? '...' : `${side.toUpperCase()} ${symbol.replace('NSE:', '')}`}</button>
+      </div>
+      {status && (
+        <div style={{ fontSize: 11, padding: '6px 10px', borderRadius: 7, fontFamily: 'DM Mono, monospace',
+          background: status.ok ? 'rgba(16,185,129,0.08)' : 'rgba(244,63,94,0.08)',
+          color: status.ok ? '#10b981' : '#f43f5e',
+          border: `1px solid ${status.ok ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)'}`,
+        }}>{status.msg}</div>
+      )}
+    </div>
+  );
+}
+
 // -- Portfolio ----------------------------------------------------------------â”€
 function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
   const { portfolio, balance, removePosition } = useStore();
@@ -739,10 +924,10 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
   const totalCost = portfolio.reduce((s, p) => s + safeN(p.avgPrice) * safeN(p.quantity), 0);
   const pnl = totalVal - totalCost;
   const pnlPct = totalCost ? (pnl / totalCost * 100) : 0;
-  const alloc = portfolio.map(p => ({ name: p.symbol, value: safeN(p.currentPrice || p.avgPrice) * safeN(p.quantity) }));
+  const [selectedSym, setSelectedSym] = useState('');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 1100 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         {[
           { label: 'Total Value', value: '$' + (totalVal + balance).toLocaleString(undefined, { maximumFractionDigits: 0 }), sub: 'Portfolio + Cash' },
@@ -779,7 +964,7 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
               const pl = (cur - cost) * qty;
               const plPct = cost ? ((cur - cost) / cost * 100) : 0;
               return (
-                <div key={p.symbol} onClick={() => onSelect(p.symbol)}
+                <div key={p.symbol} onClick={() => { onSelect(p.symbol); setSelectedSym(p.symbol); }}
                   style={{
                     display: 'grid', gridTemplateColumns: '1fr 80px 80px 80px 80px 24px',
                     gap: 8, padding: '10px', borderRadius: 8, cursor: 'pointer', background: '#06081a',
@@ -810,6 +995,13 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
           </div>
         )}
       </div>
+      <PortfolioAnalyticsPanel />
+      {selectedSym && <AlpacaTradePanel symbol={selectedSym} />}
+      {portfolio.length > 0 && !selectedSym && (
+        <div style={{ fontSize: 11, color: '#475569', textAlign: 'center', padding: '4px 0', fontFamily: 'DM Mono, monospace' }}>
+          Click a position to enable Alpaca live trade for that symbol
+        </div>
+      )}
     </div>
   );
 }
@@ -1011,10 +1203,15 @@ function ScreenerPage({ onSelect }: { onSelect: (s: string) => void }) {
 
 // -- Settings ------------------------------------------------------------------
 function SettingsPage() {
-  const { claudeKey, setClaudeKey } = useStore();
+  const { claudeKey, setClaudeKey, alpacaKey, setAlpacaKey, alpacaSecret, setAlpacaSecret, alpacaMode, setAlpacaMode, notifyEmail, setNotifyEmail } = useStore();
   const [k, setK] = useState(claudeKey);
   const [saved, setSaved] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
+  const [aKey, setAKey] = useState(alpacaKey);
+  const [aSecret, setASecret] = useState(alpacaSecret);
+  const [alpacaSaved, setAlpacaSaved] = useState(false);
+  const [emailInput, setEmailInput] = useState(notifyEmail);
+  const [emailSaved, setEmailSaved] = useState(false);
 
   const upgrade = async () => {
     setUpgrading(true);
@@ -1028,6 +1225,7 @@ function SettingsPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 600 }}>
+      {/* Claude AI */}
       <div className="card" style={{ padding: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           <Brain size={16} color="#6366f1" />
@@ -1042,11 +1240,11 @@ function SettingsPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => { setClaudeKey(k); setSaved(true); setTimeout(() => setSaved(false), 2000); }}
             style={{ flex: 1, padding: '9px 0', background: saved ? 'rgba(16,185,129,0.15)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none', borderRadius: 8, color: saved ? UP_COLOR : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            {saved ? 'âœ“ Saved' : 'Save API Key'}
+            {saved ? '\u2713 Saved' : 'Save API Key'}
           </button>
           <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"
             style={{ flex: 1, padding: '9px 0', background: 'rgba(99,102,241,0.12)', border: 'none', borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, textAlign: 'center', textDecoration: 'none', display: 'block' }}>
-            Get API Key â†—
+            Get API Key \u2197
           </a>
         </div>
         {claudeKey && (
@@ -1054,6 +1252,80 @@ function SettingsPage() {
             <CheckCircle size={13} /> Claude AI connected
           </div>
         )}
+      </div>
+
+      {/* Alpaca Brokerage */}
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <Activity size={15} color="#10b981" />
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>Alpaca Brokerage</span>
+          <span style={{
+            marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+            background: alpacaKey ? 'rgba(16,185,129,0.10)' : 'rgba(100,116,139,0.08)',
+            color: alpacaKey ? '#10b981' : '#475569',
+            border: `1px solid ${alpacaKey ? 'rgba(16,185,129,0.22)' : 'rgba(100,116,139,0.15)'}`,
+          }}>{alpacaKey ? '\u25cf Connected' : '\u25cb Not connected'}</span>
+        </div>
+        <p style={{ fontSize: 12, color: '#64748b', lineHeight: 1.6, marginBottom: 14 }}>
+          Connect Alpaca to execute real trades. Paper trading is risk-free. Your keys are stored only in your browser.
+        </p>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+          {(['paper', 'live'] as const).map(m => (
+            <button key={m} onClick={() => setAlpacaMode(m)}
+              style={{
+                flex: 1, padding: '7px 0', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                textTransform: 'uppercase', letterSpacing: '0.05em',
+                background: alpacaMode === m ? (m === 'live' ? 'rgba(244,63,94,0.15)' : 'rgba(245,158,11,0.12)') : '#06081a',
+                color: alpacaMode === m ? (m === 'live' ? '#f43f5e' : '#f59e0b') : '#475569',
+                border: `1px solid ${alpacaMode === m ? (m === 'live' ? 'rgba(244,63,94,0.30)' : 'rgba(245,158,11,0.25)') : 'rgba(99,102,241,0.10)'}`,
+              }}>{m === 'live' ? '\u26a1 Live Trading' : '\ud83d\udccb Paper Trading'}</button>
+          ))}
+        </div>
+        {alpacaMode === 'live' && (
+          <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.18)', borderRadius: 8, fontSize: 11, color: '#f43f5e' }}>
+            \u26a0 Live mode uses real money. Ensure you understand the risks before placing orders.
+          </div>
+        )}
+        <input type="password" value={aKey} onChange={e => setAKey(e.target.value)}
+          placeholder="Alpaca API Key ID"
+          style={{ width: '100%', background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box', marginBottom: 8 }} />
+        <input type="password" value={aSecret} onChange={e => setASecret(e.target.value)}
+          placeholder="Alpaca Secret Key"
+          style={{ width: '100%', background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => { setAlpacaKey(aKey); setAlpacaSecret(aSecret); setAlpacaSaved(true); setTimeout(() => setAlpacaSaved(false), 2000); }}
+            style={{ flex: 1, padding: '9px 0', background: alpacaSaved ? 'rgba(16,185,129,0.15)' : 'linear-gradient(135deg, #10b981, #059669)', border: 'none', borderRadius: 8, color: alpacaSaved ? UP_COLOR : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            {alpacaSaved ? '\u2713 Saved' : 'Save Alpaca Keys'}
+          </button>
+          <a href="https://alpaca.markets/docs/api-references/trading-api/" target="_blank" rel="noopener noreferrer"
+            style={{ flex: 1, padding: '9px 0', background: 'rgba(99,102,241,0.12)', border: 'none', borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, textAlign: 'center', textDecoration: 'none', display: 'block' }}>
+            Get Alpaca Keys \u2197
+          </a>
+        </div>
+      </div>
+
+      {/* Email Notifications */}
+      <div className="card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <Mail size={15} color="#f59e0b" />
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>Email Price Alerts</span>
+          <span style={{
+            marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+            background: notifyEmail ? 'rgba(16,185,129,0.10)' : 'rgba(100,116,139,0.08)',
+            color: notifyEmail ? '#10b981' : '#475569',
+            border: `1px solid ${notifyEmail ? 'rgba(16,185,129,0.22)' : 'rgba(100,116,139,0.15)'}`,
+          }}>{notifyEmail ? '\u25cf Active' : '\u25cb Off'}</span>
+        </div>
+        <p style={{ fontSize: 12, color: '#64748b', lineHeight: 1.6, marginBottom: 14 }}>
+          Get email notifications when your price alerts trigger. Requires <code style={{ background: '#06081a', padding: '1px 5px', borderRadius: 4, fontSize: 11, color: '#818cf8' }}>RESEND_API_KEY</code> to be set on the server.
+        </p>
+        <input type="email" value={emailInput} onChange={e => setEmailInput(e.target.value)}
+          placeholder="you@example.com"
+          style={{ width: '100%', background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#f1f5f9', outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
+        <button onClick={() => { setNotifyEmail(emailInput); setEmailSaved(true); setTimeout(() => setEmailSaved(false), 2000); }}
+          style={{ width: '100%', padding: '9px 0', background: emailSaved ? 'rgba(16,185,129,0.15)' : 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', borderRadius: 8, color: emailSaved ? UP_COLOR : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          {emailSaved ? '\u2713 Saved' : 'Save Email'}
+        </button>
       </div>
 
       <div className="card" style={{ padding: 24 }}>
@@ -1068,7 +1340,7 @@ function SettingsPage() {
         </div>
         <button onClick={upgrade} disabled={upgrading} className="btn-primary" style={{ width: '100%', padding: '10px 0' }}>
           <CreditCard size={14} style={{ display: 'inline', marginRight: 6 }} />
-          {upgrading ? 'Redirecting...' : 'Upgrade â€” $19/month'}
+          {upgrading ? 'Redirecting...' : 'Upgrade \u2014 $19/month'}
         </button>
       </div>
 
@@ -1077,6 +1349,7 @@ function SettingsPage() {
         {[
           { name: 'Finnhub', desc: 'Real-time quotes, fundamentals, news', status: 'Active', link: 'https://finnhub.io' },
           { name: 'Anthropic Claude', desc: 'AI-powered stock analysis', status: claudeKey ? 'Connected' : 'Not connected', link: 'https://console.anthropic.com' },
+          { name: 'Alpaca Markets', desc: 'Brokerage & order execution', status: alpacaKey ? `Connected (${alpacaMode})` : 'Not connected', link: 'https://alpaca.markets' },
         ].map(({ name, desc, status, link }) => (
           <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(99,102,241,0.12)' }}>
             <div>
@@ -1084,8 +1357,8 @@ function SettingsPage() {
               <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>{desc}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 11, color: status === 'Active' || status === 'Connected' ? UP_COLOR : '#475569' }}>{status}</span>
-              <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: BLUE }}>Manage â†—</a>
+              <span style={{ fontSize: 11, color: status === 'Active' || status.startsWith('Connected') ? UP_COLOR : '#475569' }}>{status}</span>
+              <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: BLUE }}>Manage \u2197</a>
             </div>
           </div>
         ))}
@@ -1093,7 +1366,6 @@ function SettingsPage() {
     </div>
   );
 }
-
 // -- Symbol view --------------------------------------------------------------â”€
 function SymbolView({ symbol }: { symbol: string }) {
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -1476,7 +1748,7 @@ type Tab = 'dashboard' | 'markets' | 'portfolio' | 'watchlist' | 'screener' | 'c
 
 export default function App() {
   const { isSignedIn, isLoaded, user } = useUser();
-  const { tab, setTab, symbol, setSymbol, addRecent, alerts, triggerAlert, addAlert } = useStore();
+  const { tab, setTab, symbol, setSymbol, addRecent, alerts, triggerAlert, addAlert, notifyEmail } = useStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [searchRes, setSearchRes] = useState<SearchResult[]>([]);
@@ -1546,6 +1818,20 @@ export default function App() {
               triggerAlert(alert.id);
               setAlertToast(`🔔 ${alert.symbol} is ${alert.condition} $${alert.price} (now $${price.toFixed(2)})`);
               setTimeout(() => setAlertToast(null), 6000);
+              // Send email notification if configured
+              if (notifyEmail) {
+                fetch('/api/notify', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    email: notifyEmail,
+                    symbol: alert.symbol,
+                    condition: alert.condition,
+                    triggerPrice: alert.price,
+                    currentPrice: price,
+                  }),
+                }).catch(() => { /* ignore email errors */ });
+              }
             }
           }
         } catch { /* ignore */ }
@@ -1554,7 +1840,7 @@ export default function App() {
     check();
     const t = setInterval(check, 30000);
     return () => clearInterval(t);
-  }, [isSignedIn, alerts, triggerAlert]);
+  }, [isSignedIn, alerts, triggerAlert, notifyEmail]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
