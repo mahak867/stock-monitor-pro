@@ -47,9 +47,9 @@ const timeAgo = (ts: number): string => {
 const fmtDate = (ts: number): string =>
   new Date(ts * 1000).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
 
-const UP_COLOR = '#22c55e';
-const DOWN_COLOR = '#ef4444';
-const BLUE = '#3b82f6';
+const UP_COLOR = '#10b981';
+const DOWN_COLOR = '#f43f5e';
+const BLUE = '#6366f1';
 
 // -- Sparkline ----------------------------------------------------------------
 function Spark({ data, up }: { data: number[]; up: boolean }) {
@@ -75,44 +75,46 @@ function Badge({ dp }: { dp: number | undefined }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 2,
-      padding: '2px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-      background: up ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+      padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+      background: up ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)',
       color: up ? UP_COLOR : DOWN_COLOR,
+      border: `1px solid ${up ? 'rgba(16,185,129,0.22)' : 'rgba(244,63,94,0.22)'}`,
       fontFamily: 'DM Mono, monospace',
+      letterSpacing: '0.02em',
     }}>
-      {up ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+      {up ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
       {up ? '+' : ''}{v.toFixed(2)}%
     </span>
   );
 }
 
-// -- Ticker tape --------------------------------------------------------------â”€
+
+// -- Ticker tape --------------------------------------------------------------
 function Ticker({ quotes }: { quotes: Record<string, Quote> }) {
   const items = Object.entries(quotes);
   if (!items.length) return null;
   const tape = [...items, ...items];
   return (
-    <div style={{ overflow: 'hidden', borderBottom: '1px solid #1a2035', background: '#0a0a0f', padding: '6px 0', flexShrink: 0 }}>
-      <div className="ticker" style={{ display: 'flex', gap: 40, width: 'max-content', paddingLeft: 16 }}>
+    <div className="ticker-wrap" style={{ borderBottom: '1px solid rgba(99,102,241,0.10)', background: '#03030a', padding: '7px 0', flexShrink: 0 }}>
+      <div className="ticker" style={{ display: 'flex', gap: 0, width: 'max-content', paddingLeft: 16 }}>
         {tape.map(([sym, q], i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, paddingRight: 40 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#64748b', fontFamily: 'DM Mono, monospace', letterSpacing: '0.06em' }}>
               {sym.replace('NSE:', '')}
             </span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#e2e8f0', fontFamily: 'DM Mono, monospace' }}>
               ${fmtPrice(q?.c)}
             </span>
-            <span style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: safeN(q?.dp) >= 0 ? UP_COLOR : DOWN_COLOR }}>
+            <span style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', fontWeight: 600, color: safeN(q?.dp) >= 0 ? UP_COLOR : DOWN_COLOR }}>
               {safeN(q?.dp) >= 0 ? '+' : ''}{fmtPrice(q?.dp)}%
             </span>
+            <span style={{ color: 'rgba(99,102,241,0.25)', fontSize: 8, flexShrink: 0 }}>◆</span>
           </div>
         ))}
       </div>
     </div>
   );
 }
-
-// -- Chart --------------------------------------------------------------------
 function PriceChart({ candles, symbol, quote }: { candles: Candle[]; symbol: string; quote: Quote | null }) {
   const [range, setRange] = useState<'1W' | '1M' | '3M' | '6M' | '1Y'>('3M');
   const days = { '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365 }[range];
@@ -130,7 +132,7 @@ function PriceChart({ candles, symbol, quote }: { candles: Candle[]; symbol: str
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 28, fontWeight: 700, color: '#fff', fontFamily: 'DM Mono, monospace' }}>
+            <span style={{ fontSize: 30, fontWeight: 800, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', letterSpacing: '-0.02em' }}>
               ${fmtPrice(quote?.c)}
             </span>
             {quote && <Badge dp={quote.dp} />}
@@ -153,11 +155,11 @@ function PriceChart({ candles, symbol, quote }: { candles: Candle[]; symbol: str
           {(['1W', '1M', '3M', '6M', '1Y'] as const).map(r => (
             <button key={r} onClick={() => setRange(r)}
               style={{
-                padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-                background: range === r ? BLUE : 'transparent',
-                color: range === r ? '#fff' : '#64748b',
-                border: range === r ? 'none' : '1px solid #1a2035',
-                cursor: 'pointer', transition: 'all 0.15s',
+                padding: '5px 11px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+                background: range === r ? 'rgba(99,102,241,0.20)' : 'transparent',
+                color: range === r ? '#818cf8' : '#475569',
+                border: range === r ? '1px solid rgba(99,102,241,0.35)' : '1px solid rgba(99,102,241,0.10)',
+                cursor: 'pointer', transition: 'all 0.15s', letterSpacing: '0.02em',
               }}>
               {r}
             </button>
@@ -173,11 +175,11 @@ function PriceChart({ candles, symbol, quote }: { candles: Candle[]; symbol: str
                 <stop offset="100%" stopColor={color} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke="#1a2035" strokeDasharray="4 8" />
+            <CartesianGrid stroke="rgba(99,102,241,0.08)" strokeDasharray="4 10" />
             <XAxis dataKey="date" stroke="transparent" tick={{ fill: '#475569', fontSize: 10, fontFamily: 'DM Mono, monospace' }} />
             <YAxis stroke="transparent" tick={{ fill: '#475569', fontSize: 10, fontFamily: 'DM Mono, monospace' }} domain={['auto', 'auto']} width={60} />
             <Tooltip
-              contentStyle={{ background: '#0f1221', border: '1px solid #1a2035', borderRadius: 8, fontSize: 12, fontFamily: 'DM Mono, monospace' }}
+              contentStyle={{ background: '#0b0d1c', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, fontSize: 12, fontFamily: 'DM Mono, monospace' }}
               labelStyle={{ color: '#64748b' }}
               formatter={(v: unknown) => ['$' + fmtPrice(v), 'Price']}
             />
@@ -190,7 +192,7 @@ function PriceChart({ candles, symbol, quote }: { candles: Candle[]; symbol: str
           <BarChart data={data}>
             <XAxis dataKey="date" hide />
             <YAxis hide />
-            <Bar dataKey="vol" fill="#1e2535" radius={[2, 2, 0, 0]} />
+            <Bar dataKey="vol" fill="rgba(99,102,241,0.18)" radius={[2, 2, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -235,13 +237,13 @@ function AboutPanel({ symbol }: { symbol: string }) {
   return (
     <div className="card" style={{ padding: 20 }}>
       {profile && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #1a2035' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid rgba(99,102,241,0.12)' }}>
           {profile.logo && (
             <Image src={profile.logo} alt={profile.name} width={36} height={36}
               style={{ borderRadius: 8, objectFit: 'contain', background: '#fff', padding: 3 }} />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>
             <div style={{ fontSize: 11, color: '#64748b' }}>{profile.finnhubIndustry} Â· {profile.exchange}</div>
           </div>
           {profile.weburl && (
@@ -253,9 +255,9 @@ function AboutPanel({ symbol }: { symbol: string }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
         {stats.map(({ label, value }) => (
-          <div key={label} style={{ background: '#080b14', borderRadius: 8, padding: '8px 12px' }}>
+          <div key={label} style={{ background: '#06081a', borderRadius: 8, padding: '8px 12px' }}>
             <div style={{ fontSize: 10, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>{value}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>{value}</div>
           </div>
         ))}
       </div>
@@ -285,9 +287,9 @@ function AboutPanel({ symbol }: { symbol: string }) {
                 q: `Q${e.quarter} ${e.year}`, actual: e.epsActual, estimate: e.epsEstimate,
               }))}>
                 <XAxis dataKey="q" tick={{ fill: '#475569', fontSize: 9 }} stroke="transparent" />
-                <Tooltip contentStyle={{ background: '#0f1221', border: '1px solid #1a2035', borderRadius: 8, fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: '#0b0d1c', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, fontSize: 11 }} />
                 <Bar dataKey="actual" fill={BLUE} radius={[3, 3, 0, 0]} name="Actual" />
-                <Bar dataKey="estimate" fill="#1e2535" radius={[3, 3, 0, 0]} name="Estimate" />
+                <Bar dataKey="estimate" fill="#131628" radius={[3, 3, 0, 0]} name="Estimate" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -316,8 +318,8 @@ function ClaudePanel({ symbol, quote, metrics }: { symbol: string; quote: Quote 
     <div className="card" style={{ padding: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Brain size={15} color="#7c3aed" />
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>Claude AI Analysis</span>
+          <Brain size={15} color="#6366f1" />
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>Claude AI Analysis</span>
         </div>
         <button onClick={() => setEditing(!editing)}
           style={{ fontSize: 11, color: BLUE, background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -332,14 +334,14 @@ function ClaudePanel({ symbol, quote, metrics }: { symbol: string; quote: Quote 
           </p>
           <input type="password" value={keyInput} onChange={e => setKeyInput(e.target.value)}
             placeholder="sk-ant-..."
-            style={{ width: '100%', background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box' }} />
+            style={{ width: '100%', background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box' }} />
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button onClick={() => { setClaudeKey(keyInput); setEditing(false); }}
-              style={{ flex: 1, padding: '7px 0', background: '#7c3aed', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              style={{ flex: 1, padding: '7px 0', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none', borderRadius: 9, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 16px rgba(99,102,241,0.3)' }}>
               Save
             </button>
             <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"
-              style={{ flex: 1, padding: '7px 0', background: '#1a2035', border: 'none', borderRadius: 8, color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', textAlign: 'center', display: 'block' }}>
+              style={{ flex: 1, padding: '7px 0', background: 'rgba(99,102,241,0.12)', border: 'none', borderRadius: 8, color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', textAlign: 'center', display: 'block' }}>
               Get key â†—
             </a>
           </div>
@@ -348,14 +350,14 @@ function ClaudePanel({ symbol, quote, metrics }: { symbol: string; quote: Quote 
 
       {!claudeKey && !editing ? (
         <div style={{ textAlign: 'center', padding: '20px 0', color: '#475569', fontSize: 13 }}>
-          <Brain size={28} color="#1e2535" style={{ margin: '0 auto 8px' }} />
+          <Brain size={28} color="#131628" style={{ margin: '0 auto 8px' }} />
           <p>Add your Claude API key to get AI stock analysis</p>
         </div>
       ) : claudeKey && !editing && (
         <button onClick={run} disabled={loading || !quote}
           style={{
             width: '100%', padding: '10px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
-            background: loading ? '#1a2035' : 'linear-gradient(135deg, #7c3aed, #3b82f6)',
+            background: loading ? 'rgba(99,102,241,0.10)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
             color: '#fff', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center',
             justifyContent: 'center', gap: 8, opacity: loading || !quote ? 0.7 : 1,
           }}>
@@ -365,7 +367,7 @@ function ClaudePanel({ symbol, quote, metrics }: { symbol: string; quote: Quote 
 
       {analysis && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          style={{ marginTop: 12, padding: '12px 14px', background: '#080b14', borderRadius: 8, border: '1px solid #1a2035' }}>
+          style={{ marginTop: 12, padding: '12px 14px', background: '#06081a', borderRadius: 8, border: '1px solid rgba(99,102,241,0.12)' }}>
           <p style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.7 }}>{analysis}</p>
         </motion.div>
       )}
@@ -389,7 +391,7 @@ function NewsPanel({ symbol }: { symbol?: string }) {
   return (
     <div className="card" style={{ padding: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>
           {symbol ? symbol.replace('NSE:', '') + ' News' : 'Market News'}
         </span>
         <div style={{ display: 'flex', gap: 4 }}>
@@ -398,7 +400,7 @@ function NewsPanel({ symbol }: { symbol?: string }) {
               style={{
                 padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer',
                 border: 'none', textTransform: 'capitalize',
-                background: filter === f ? (f === 'positive' ? 'rgba(34,197,94,0.15)' : f === 'negative' ? 'rgba(239,68,68,0.15)' : '#1a2035') : 'transparent',
+                background: filter === f ? (f === 'positive' ? 'rgba(34,197,94,0.15)' : f === 'negative' ? 'rgba(239,68,68,0.15)' : 'rgba(99,102,241,0.12)') : 'transparent',
                 color: filter === f ? (f === 'positive' ? UP_COLOR : f === 'negative' ? DOWN_COLOR : '#94a3b8') : '#475569',
               }}>
               {f}
@@ -415,12 +417,12 @@ function NewsPanel({ symbol }: { symbol?: string }) {
           {shown.map(item => (
             <a key={item.id} href={item.url} target="_blank" rel="noopener noreferrer"
               style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 8px', borderRadius: 8, textDecoration: 'none', transition: 'background 0.1s' }}
-              onMouseEnter={e => (e.currentTarget.style.background = '#0f1221')}
+              onMouseEnter={e => (e.currentTarget.style.background = '#0b0d1c')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
               <div style={{ marginTop: 2, flexShrink: 0 }}>
                 {item.sentiment === 'positive' ? <ArrowUpRight size={13} color={UP_COLOR} /> :
                   item.sentiment === 'negative' ? <ArrowDownRight size={13} color={DOWN_COLOR} /> :
-                    <div style={{ width: 13, height: 13, borderRadius: '50%', background: '#1e2535' }} />}
+                    <div style={{ width: 13, height: 13, borderRadius: '50%', background: '#131628' }} />}
               </div>
               <div style={{ minWidth: 0 }}>
                 <p style={{ fontSize: 12, fontWeight: 500, color: '#cbd5e1', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
@@ -462,7 +464,7 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
     <div className="card" style={{ padding: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
         <Star size={14} color="#f59e0b" />
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>Watchlist</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>Watchlist</span>
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <input value={input} onChange={e => setInput(e.target.value.toUpperCase())}
@@ -473,9 +475,9 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
             }
           }}
           placeholder="Add symbol..." maxLength={15}
-          style={{ flex: 1, background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '7px 12px', fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none' }} />
+          style={{ flex: 1, background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '7px 12px', fontSize: 12, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', outline: 'none' }} />
         <button onClick={() => { if (input.trim()) { addWatch({ symbol: input.trim(), name: input.trim() }); setInput(''); } }}
-          style={{ padding: '7px 12px', background: BLUE, border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+          style={{ padding: '7px 12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none', borderRadius: 9, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', boxShadow: '0 0 12px rgba(99,102,241,0.25)' }}>
           <Plus size={14} />
         </button>
       </div>
@@ -492,10 +494,10 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
                 background: selected === symbol ? 'rgba(59,130,246,0.08)' : 'transparent',
                 border: '1px solid ' + (selected === symbol ? 'rgba(59,130,246,0.2)' : 'transparent'),
               }}
-              onMouseEnter={e => { if (selected !== symbol) e.currentTarget.style.background = '#0f1221'; }}
+              onMouseEnter={e => { if (selected !== symbol) e.currentTarget.style.background = '#0b0d1c'; }}
               onMouseLeave={e => { if (selected !== symbol) e.currentTarget.style.background = 'transparent'; }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: selected === symbol ? BLUE : '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: selected === symbol ? BLUE : '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>
                   {symbol.replace('NSE:', '')}
                 </div>
                 <div style={{ fontSize: 10, color: '#475569' }}>{name}</div>
@@ -503,7 +505,7 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Spark data={h} up={up} />
                 <div style={{ textAlign: 'right', minWidth: 64 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>
                     ${fmtPrice(q?.c)}
                   </div>
                   <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: up ? UP_COLOR : DOWN_COLOR }}>
@@ -511,9 +513,9 @@ function WatchlistPanel({ onSelect, selected }: { onSelect: (s: string) => void;
                   </div>
                 </div>
                 <button onClick={e => { e.stopPropagation(); removeWatch(symbol); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1e2535', padding: 2 }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#131628', padding: 2 }}
                   onMouseEnter={e => (e.currentTarget.style.color = DOWN_COLOR)}
-                  onMouseLeave={e => (e.currentTarget.style.color = '#1e2535')}>
+                  onMouseLeave={e => (e.currentTarget.style.color = '#131628')}>
                   <Trash2 size={12} />
                 </button>
               </div>
@@ -536,39 +538,39 @@ function AlertsPanel() {
     <div className="card" style={{ padding: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
         <Bell size={14} color="#f59e0b" />
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>Price Alerts</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>Price Alerts</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         <input value={sym} onChange={e => setSym(e.target.value.toUpperCase())} placeholder="Symbol"
-          style={{ background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '7px 12px', fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none' }} />
+          style={{ background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '7px 12px', fontSize: 12, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', outline: 'none' }} />
         <div style={{ display: 'flex', gap: 8 }}>
           <select value={cond} onChange={e => setCond(e.target.value as 'above' | 'below')}
-            style={{ flex: 1, background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '7px 10px', fontSize: 12, color: '#e8eaf0', outline: 'none' }}>
+            style={{ flex: 1, background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '7px 10px', fontSize: 12, color: '#f1f5f9', outline: 'none' }}>
             <option value="above">Above</option>
             <option value="below">Below</option>
           </select>
           <input value={price} onChange={e => setPrice(e.target.value)} placeholder="Price" type="number"
-            style={{ flex: 1, background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '7px 12px', fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none' }} />
+            style={{ flex: 1, background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '7px 12px', fontSize: 12, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', outline: 'none' }} />
         </div>
         <button onClick={() => { if (sym && price) { addAlert({ symbol: sym, condition: cond, price: parseFloat(price), active: true }); setSym(''); setPrice(''); } }}
-          style={{ padding: '8px 0', background: '#1a2035', border: '1px solid #252d45', borderRadius: 8, color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+          style={{ padding: '8px 0', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.22)', borderRadius: 9, color: '#818cf8', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>
           + Set Alert
         </button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
         {alerts.length === 0 && <p style={{ fontSize: 12, color: '#475569', textAlign: 'center', padding: '12px 0' }}>No alerts set</p>}
         {alerts.map(a => (
-          <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: '#080b14', borderRadius: 8 }}>
+          <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: '#06081a', borderRadius: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button onClick={() => toggleAlert(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                {a.triggered ? <AlertTriangle size={14} color="#f59e0b" /> : a.active ? <CheckCircle size={14} color={UP_COLOR} /> : <CheckCircle size={14} color="#1e2535" />}
+                {a.triggered ? <AlertTriangle size={14} color="#f59e0b" /> : a.active ? <CheckCircle size={14} color={UP_COLOR} /> : <CheckCircle size={14} color="#131628" />}
               </button>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>{a.symbol}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>{a.symbol}</span>
               <span style={{ fontSize: 11, color: '#475569', fontFamily: 'DM Mono, monospace' }}>{a.condition} ${a.price}</span>
             </div>
-            <button onClick={() => removeAlert(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1e2535' }}
+            <button onClick={() => removeAlert(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#131628' }}
               onMouseEnter={e => (e.currentTarget.style.color = DOWN_COLOR)}
-              onMouseLeave={e => (e.currentTarget.style.color = '#1e2535')}>
+              onMouseLeave={e => (e.currentTarget.style.color = '#131628')}>
               <Trash2 size={12} />
             </button>
           </div>
@@ -606,16 +608,16 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Globe size={14} color="#64748b" />
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>Markets</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>Markets</span>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {(['us', 'india', 'crypto'] as const).map(m => (
             <button key={m} onClick={() => setMarket(m)}
               style={{
                 padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                background: market === m ? BLUE : 'transparent',
-                color: market === m ? '#fff' : '#64748b',
-                border: market === m ? 'none' : '1px solid #1a2035',
+                background: market === m ? 'rgba(99,102,241,0.18)' : 'transparent',
+                color: market === m ? '#818cf8' : '#64748b',
+                border: market === m ? '1px solid rgba(99,102,241,0.35)' : '1px solid rgba(99,102,241,0.10)',
                 textTransform: 'uppercase',
               }}>
               {m === 'us' ? 'US' : m === 'india' ? 'IN' : 'Crypto'}
@@ -634,13 +636,13 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
               <div key={symbol} onClick={() => onSelect(symbol)}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: '#080b14',
+                  padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: '#06081a',
                   border: '1px solid transparent', transition: 'border-color 0.15s',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = '#252d45')}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.28)')}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', marginBottom: 2 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', marginBottom: 2 }}>
                     {symbol.replace('NSE:', '')}
                   </div>
                   <div style={{ fontSize: 10, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
@@ -648,7 +650,7 @@ function MarketsGrid({ onSelect }: { onSelect: (s: string) => void }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Spark data={hist} up={up} />
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>${fmtPrice(q?.c)}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>${fmtPrice(q?.c)}</div>
                     <div style={{ fontSize: 11, fontFamily: 'DM Mono, monospace', color: up ? UP_COLOR : DOWN_COLOR }}>
                       {up ? '+' : ''}{fmtPrice(q?.dp)}%
                     </div>
@@ -682,13 +684,13 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
         ].map(({ label, value, sub, color }) => (
           <div key={label} className="card" style={{ padding: 16 }}>
             <div style={{ fontSize: 11, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: color || '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>{value}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: color || '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>{value}</div>
             <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>{sub}</div>
           </div>
         ))}
       </div>
       <div className="card" style={{ padding: 20 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', marginBottom: 14 }}>Positions</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9', marginBottom: 14 }}>Positions</div>
         {portfolio.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: '#475569' }}>
             <p style={{ fontSize: 14 }}>No positions yet</p>
@@ -712,26 +714,26 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
                 <div key={p.symbol} onClick={() => onSelect(p.symbol)}
                   style={{
                     display: 'grid', gridTemplateColumns: '1fr 80px 80px 80px 80px 24px',
-                    gap: 8, padding: '10px', borderRadius: 8, cursor: 'pointer', background: '#080b14',
+                    gap: 8, padding: '10px', borderRadius: 8, cursor: 'pointer', background: '#06081a',
                     alignItems: 'center', border: '1px solid transparent',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = '#1a2035')}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.12)')}
                   onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#e8eaf0', fontFamily: 'DM Mono, monospace' }}>{p.symbol}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>{p.symbol}</div>
                     <div style={{ fontSize: 11, color: '#475569' }}>{p.name}</div>
                   </div>
                   <div style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>{qty}</div>
                   <div style={{ fontSize: 12, color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>${cost.toFixed(2)}</div>
-                  <div style={{ fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>${val.toFixed(2)}</div>
+                  <div style={{ fontSize: 12, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', fontWeight: 600 }}>${val.toFixed(2)}</div>
                   <div style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: pl >= 0 ? UP_COLOR : DOWN_COLOR, fontWeight: 600 }}>
                     {pl >= 0 ? '+' : ''}{pl.toFixed(2)}<br />
                     <span style={{ fontSize: 10 }}>({fmtPrice(plPct)}%)</span>
                   </div>
                   <button onClick={e => { e.stopPropagation(); removePosition(p.symbol); }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1e2535', padding: 2 }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#131628', padding: 2 }}
                     onMouseEnter={e => (e.currentTarget.style.color = DOWN_COLOR)}
-                    onMouseLeave={e => (e.currentTarget.style.color = '#1e2535')}>
+                    onMouseLeave={e => (e.currentTarget.style.color = '#131628')}>
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -771,43 +773,43 @@ function ScreenerPage({ onSelect }: { onSelect: (s: string) => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>
       <div className="card" style={{ padding: 20 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', marginBottom: 14 }}>Symbol Search</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9', marginBottom: 14 }}>Symbol Search</div>
         <div style={{ position: 'relative', marginBottom: 12 }}>
           <Search size={15} color="#475569" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
           <input value={q} onChange={e => setQ(e.target.value.toUpperCase())}
             placeholder="Search stocks, ETFs, indices..."
-            style={{ width: '100%', background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '10px 12px 10px 38px', fontSize: 13, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box' }} />
+            style={{ width: '100%', background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '10px 12px 10px 38px', fontSize: 13, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box' }} />
         </div>
-        {loading && <p style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: '8px 0' }}>Searching...</p>}
+        {loading && <p style={{ fontSize: 12, color: '#6366f1', textAlign: 'center', padding: '8px 0', fontFamily: 'DM Mono, monospace' }}>Searching...</p>}
         {results.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {results.map(r => (
               <div key={r.symbol} onClick={() => onSelect(r.symbol)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: '#080b14', border: '1px solid #1a2035' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: '#06081a', border: '1px solid rgba(99,102,241,0.12)' }}
                 onMouseEnter={e => (e.currentTarget.style.borderColor = BLUE + '40')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = '#1a2035')}>
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.12)')}>
                 <div>
                   <span style={{ fontSize: 13, fontWeight: 700, color: BLUE, fontFamily: 'DM Mono, monospace' }}>{r.symbol}</span>
                   <span style={{ fontSize: 12, color: '#64748b', marginLeft: 10 }}>{r.description}</span>
                 </div>
-                <span style={{ fontSize: 10, color: '#475569', background: '#1a2035', padding: '3px 8px', borderRadius: 4 }}>{r.type}</span>
+                <span style={{ fontSize: 10, color: '#475569', background: 'rgba(99,102,241,0.12)', padding: '3px 8px', borderRadius: 4 }}>{r.type}</span>
               </div>
             ))}
           </div>
         )}
       </div>
       <div className="card" style={{ padding: 20 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0', marginBottom: 14 }}>Preset Screens</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9', marginBottom: 14 }}>Preset Screens</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {presets.map(p => (
-            <div key={p.label} style={{ background: '#080b14', border: '1px solid #1a2035', borderRadius: 10, padding: '12px 14px' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#e8eaf0', marginBottom: 8 }}>{p.label}</div>
+            <div key={p.label} style={{ background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9', marginBottom: 8 }}>{p.label}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {p.syms.map(s => (
                   <button key={s} onClick={() => onSelect(s)}
-                    style={{ padding: '4px 10px', background: '#111420', border: '1px solid #1a2035', borderRadius: 20, fontSize: 11, color: '#64748b', cursor: 'pointer', fontFamily: 'DM Mono, monospace', transition: 'all 0.15s' }}
+                    style={{ padding: '4px 10px', background: '#090b1c', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 20, fontSize: 11, color: '#64748b', cursor: 'pointer', fontFamily: 'DM Mono, monospace', transition: 'all 0.15s' }}
                     onMouseEnter={e => { e.currentTarget.style.borderColor = BLUE; e.currentTarget.style.color = BLUE; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#1a2035'; e.currentTarget.style.color = '#64748b'; }}>
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.12)'; e.currentTarget.style.color = '#64748b'; }}>
                     {s.replace('NSE:', '')}
                   </button>
                 ))}
@@ -841,22 +843,22 @@ function SettingsPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 600 }}>
       <div className="card" style={{ padding: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-          <Brain size={16} color="#7c3aed" />
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0' }}>Claude AI Integration</span>
+          <Brain size={16} color="#6366f1" />
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9' }}>Claude AI Integration</span>
         </div>
         <p style={{ fontSize: 12, color: '#64748b', lineHeight: 1.6, marginBottom: 14 }}>
           Connect your Anthropic API key to get real-time AI analysis for any stock directly in the dashboard. Your key is stored only in your browser.
         </p>
         <input type="password" value={k} onChange={e => setK(e.target.value)}
           placeholder="sk-ant-api03-..."
-          style={{ width: '100%', background: '#080b14', border: '1px solid #1a2035', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
+          style={{ width: '100%', background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box', marginBottom: 10 }} />
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => { setClaudeKey(k); setSaved(true); setTimeout(() => setSaved(false), 2000); }}
-            style={{ flex: 1, padding: '9px 0', background: saved ? 'rgba(34,197,94,0.2)' : '#7c3aed', border: 'none', borderRadius: 8, color: saved ? UP_COLOR : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            style={{ flex: 1, padding: '9px 0', background: saved ? 'rgba(16,185,129,0.15)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none', borderRadius: 8, color: saved ? UP_COLOR : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             {saved ? 'âœ“ Saved' : 'Save API Key'}
           </button>
           <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"
-            style={{ flex: 1, padding: '9px 0', background: '#1a2035', border: 'none', borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, textAlign: 'center', textDecoration: 'none', display: 'block' }}>
+            style={{ flex: 1, padding: '9px 0', background: 'rgba(99,102,241,0.12)', border: 'none', borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, textAlign: 'center', textDecoration: 'none', display: 'block' }}>
             Get API Key â†—
           </a>
         </div>
@@ -868,7 +870,7 @@ function SettingsPage() {
       </div>
 
       <div className="card" style={{ padding: 24 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0', marginBottom: 4 }}>StockPro Premium</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9', marginBottom: 4 }}>StockPro Premium</div>
         <p style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>Upgrade for real-time streaming, unlimited alerts, and priority Claude analysis.</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
           {['Real-time quotes', 'Unlimited alerts', 'Options chain', 'CSV export', 'Advanced screener', 'Priority AI'].map(f => (
@@ -884,14 +886,14 @@ function SettingsPage() {
       </div>
 
       <div className="card" style={{ padding: 24 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0', marginBottom: 16 }}>Data Sources</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#f1f5f9', marginBottom: 16 }}>Data Sources</div>
         {[
           { name: 'Finnhub', desc: 'Real-time quotes, fundamentals, news', status: 'Active', link: 'https://finnhub.io' },
           { name: 'Anthropic Claude', desc: 'AI-powered stock analysis', status: claudeKey ? 'Connected' : 'Not connected', link: 'https://console.anthropic.com' },
         ].map(({ name, desc, status, link }) => (
-          <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #1a2035' }}>
+          <div key={name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(99,102,241,0.12)' }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#e8eaf0' }}>{name}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9' }}>{name}</div>
               <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>{desc}</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -931,18 +933,18 @@ function SymbolView({ symbol }: { symbol: string }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', margin: 0 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', margin: 0, letterSpacing: '-0.02em' }}>
             {symbol.replace('NSE:', '')}
           </h1>
         </div>
         {quote && <Badge dp={quote.dp} />}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: UP_COLOR, background: 'rgba(34,197,94,0.08)', padding: '3px 10px', borderRadius: 20, border: '1px solid rgba(34,197,94,0.15)' }}>
-          <span className="live-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: UP_COLOR, display: 'inline-block' }} />
-          Live
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, color: '#10b981', background: 'rgba(16,185,129,0.10)', padding: '4px 11px', borderRadius: 20, border: '1px solid rgba(16,185,129,0.22)', letterSpacing: '0.05em' }}>
+          <span className="live-dot" style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+          LIVE
         </span>
         <button onClick={load} disabled={loading}
-          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'transparent', border: '1px solid #1a2035', borderRadius: 8, color: '#64748b', fontSize: 12, cursor: 'pointer' }}>
-          <RefreshCw size={12} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.18)', borderRadius: 9, color: '#818cf8', fontSize: 12, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' }}>
+          <RefreshCw size={12} style={{ animation: loading ? 'spin 0.8s linear infinite' : 'none' }} />
           Refresh
         </button>
       </div>
@@ -1008,81 +1010,104 @@ export default function App() {
   ];
 
   if (!isLoaded) return (
-    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0f' }}>
-      <div style={{ textAlign: 'center' }}>
-        <motion.div animate={{ scale: [1, 1.08, 1] }} transition={{ repeat: Infinity, duration: 1.4 }}
-          style={{ width: 52, height: 52, background: BLUE, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-          <TrendingUp size={24} color="#fff" />
+    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#03030a', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(99,102,241,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
+      <div style={{ textAlign: 'center', position: 'relative' }}>
+        <motion.div
+          animate={{ scale: [1, 1.06, 1], boxShadow: ['0 0 24px rgba(99,102,241,0.3)', '0 0 48px rgba(99,102,241,0.55)', '0 0 24px rgba(99,102,241,0.3)'] }}
+          transition={{ repeat: Infinity, duration: 1.8, ease: 'easeInOut' }}
+          style={{ width: 60, height: 60, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+          <TrendingUp size={28} color="#fff" />
         </motion.div>
-        <p style={{ color: '#475569', fontSize: 13, fontFamily: 'DM Mono, monospace' }}>Loading...</p>
+        <p style={{ color: '#f1f5f9', fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em', marginBottom: 6 }}>StockPro</p>
+        <p style={{ color: '#475569', fontSize: 12, fontFamily: 'DM Mono, monospace', letterSpacing: '0.04em' }}>Initialising...</p>
       </div>
     </div>
   );
 
   if (!isSignedIn) return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0f', padding: 16 }}>
-      <div style={{ marginBottom: 32, textAlign: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 10 }}>
-          <div style={{ width: 44, height: 44, background: BLUE, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <TrendingUp size={22} color="#fff" />
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#03030a', padding: 16, position: 'relative', overflow: 'hidden' }}>
+      {/* Ambient glow circles */}
+      <div style={{ position: 'absolute', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.10) 0%, transparent 70%)', top: '-200px', left: '-200px', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 70%)', bottom: '-150px', right: '-100px', pointerEvents: 'none' }} />
+      <div style={{ marginBottom: 40, textAlign: 'center', position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginBottom: 12 }}>
+          <div style={{ width: 52, height: 52, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 32px rgba(99,102,241,0.40)' }}>
+            <TrendingUp size={26} color="#fff" />
           </div>
-          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#e8eaf0', margin: 0 }}>StockPro</h1>
+          <h1 style={{ fontSize: 36, fontWeight: 800, color: '#f1f5f9', margin: 0, letterSpacing: '-0.03em' }}>StockPro</h1>
         </div>
-        <p style={{ color: '#475569', fontSize: 13 }}>Track US, India & Crypto markets with AI analysis</p>
+        <p style={{ color: '#475569', fontSize: 13, letterSpacing: '0.01em' }}>Professional market intelligence — US, India & Crypto</p>
       </div>
-      <div style={{ background: '#0f1221', border: '1px solid #1a2035', borderRadius: 16, padding: 24, width: '100%', maxWidth: 380 }}>
+      <div style={{ background: 'rgba(11,13,28,0.85)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: 20, padding: 28, width: '100%', maxWidth: 400, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', boxShadow: '0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,102,241,0.08)', position: 'relative' }}>
         <SignIn routing="hash" appearance={{
           elements: {
             formButtonPrimary: 'btn-primary',
             card: 'bg-transparent shadow-none',
             headerTitle: 'text-white',
             headerSubtitle: 'text-slate-500',
-            formFieldInput: 'bg-[#080b14] border-[#1a2035] text-white',
-            footerActionLink: 'text-blue-500',
+            formFieldInput: 'bg-[#060817] border-[rgba(99,102,241,0.15)] text-white',
+            footerActionLink: 'text-indigo-400',
           },
         }} />
       </div>
     </div>
-  );
+  )
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#0a0a0f' }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#03030a', fontFamily: 'Inter, system-ui, sans-serif' }}>
       {/* Sidebar */}
       <motion.aside
-        animate={{ width: sidebarOpen ? 200 : 60 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        style={{ background: '#0a0a0f', borderRight: '1px solid #1a2035', display: 'flex', flexDirection: 'column', paddingTop: 16, paddingBottom: 16, flexShrink: 0, overflow: 'hidden', zIndex: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 14, paddingRight: 10, marginBottom: 24 }}>
+        animate={{ width: sidebarOpen ? 210 : 62 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+        style={{
+          background: 'rgba(5,6,18,0.92)',
+          borderRight: '1px solid rgba(99,102,241,0.12)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          display: 'flex', flexDirection: 'column',
+          paddingTop: 18, paddingBottom: 18, flexShrink: 0,
+          overflow: 'hidden', zIndex: 20,
+        }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 14, paddingRight: 10, marginBottom: 28 }}>
           <AnimatePresence>
             {sidebarOpen && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 28, height: 28, background: BLUE, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <TrendingUp size={14} color="#fff" />
+                style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 16px rgba(99,102,241,0.35)' }}>
+                  <TrendingUp size={15} color="#fff" />
                 </div>
-                <span style={{ fontSize: 15, fontWeight: 700, color: '#e8eaf0', whiteSpace: 'nowrap' }}>StockPro</span>
+                <span style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9', whiteSpace: 'nowrap', letterSpacing: '-0.02em' }}>StockPro</span>
               </motion.div>
             )}
           </AnimatePresence>
           <button onClick={() => setSidebarOpen(!sidebarOpen)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: 4, borderRadius: 6, display: 'flex' }}>
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: 4, borderRadius: 6, display: 'flex', transition: 'color 0.15s' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#94a3b8')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#475569')}>
             {sidebarOpen ? <X size={15} /> : <Menu size={15} />}
           </button>
         </div>
 
+        {/* Nav */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '0 8px' }}>
           {nav.map(({ id, label, icon }) => (
             <button key={id} onClick={() => setTab(id)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8,
-                background: tab === id ? 'rgba(59,130,246,0.1)' : 'transparent',
-                color: tab === id ? BLUE : '#64748b',
-                border: tab === id ? '1px solid rgba(59,130,246,0.2)' : '1px solid transparent',
+                display: 'flex', alignItems: 'center', gap: 11, padding: '9px 11px', borderRadius: 10,
+                position: 'relative',
+                background: tab === id ? 'rgba(99,102,241,0.12)' : 'transparent',
+                color: tab === id ? '#818cf8' : '#64748b',
+                border: tab === id ? '1px solid rgba(99,102,241,0.22)' : '1px solid transparent',
                 cursor: 'pointer', fontSize: 13, fontWeight: tab === id ? 600 : 400, textAlign: 'left',
                 transition: 'all 0.15s', width: '100%',
               }}
-              onMouseEnter={e => { if (tab !== id) { e.currentTarget.style.background = '#0f1221'; e.currentTarget.style.color = '#94a3b8'; } }}
+              onMouseEnter={e => { if (tab !== id) { e.currentTarget.style.background = 'rgba(99,102,241,0.06)'; e.currentTarget.style.color = '#94a3b8'; } }}
               onMouseLeave={e => { if (tab !== id) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b'; } }}>
+              {tab === id && (
+                <span style={{ position: 'absolute', left: 0, top: '22%', bottom: '22%', width: 2, background: 'linear-gradient(to bottom, #6366f1, #8b5cf6)', borderRadius: '0 2px 2px 0' }} />
+              )}
               <span style={{ flexShrink: 0 }}>{icon}</span>
               <AnimatePresence>
                 {sidebarOpen && (
@@ -1094,53 +1119,54 @@ export default function App() {
           ))}
         </div>
 
-        <div style={{ padding: '12px 12px 0', borderTop: '1px solid #1a2035', display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Footer */}
+        <div style={{ padding: '14px 12px 0', borderTop: '1px solid rgba(99,102,241,0.10)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <UserButton afterSignOutUrl="/" />
           <AnimatePresence>
             {sidebarOpen && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#e8eaf0', whiteSpace: 'nowrap', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9', whiteSpace: 'nowrap', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {user?.firstName || 'Trader'}
                 </div>
-                <div style={{ fontSize: 10, color: '#475569' }}>Free plan</div>
+                <div style={{ fontSize: 10, color: '#475569', marginTop: 1, letterSpacing: '0.02em' }}>Free plan</div>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </motion.aside>
-
       {/* Main */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Ticker quotes={tickerQ} />
 
         {/* Header */}
-        <div style={{ borderBottom: '1px solid #1a2035', background: '#0a0a0f', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0', textTransform: 'capitalize' }}>
-            {tab === 'dashboard' ? symbol.replace('NSE:', '') : tab}
+        <div style={{ borderBottom: '1px solid rgba(99,102,241,0.10)', background: 'rgba(3,3,10,0.80)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', padding: '11px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.01em' }}>
+            {tab === 'dashboard' ? symbol.replace('NSE:', '') : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </div>
           <div ref={searchRef} style={{ position: 'relative' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#0f1221', border: '1px solid #1a2035', borderRadius: 8, padding: '7px 12px', width: 220 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(6,8,26,0.9)', border: '1px solid rgba(99,102,241,0.14)', borderRadius: 10, padding: '8px 13px', width: 230, transition: 'border-color 0.2s' }}
+              onFocus={() => {}} >
               <Search size={13} color="#475569" />
               <input value={searchQ}
                 onChange={e => { setSearchQ(e.target.value.toUpperCase()); setShowSearch(true); }}
                 onFocus={() => setShowSearch(true)}
                 placeholder="Search symbol..."
-                style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 12, color: '#e8eaf0', fontFamily: 'DM Mono, monospace', width: '100%' }} />
+                style={{ background: 'transparent', border: 'none', outline: 'none', fontSize: 12, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', width: '100%', letterSpacing: '0.02em' }} />
             </div>
             <AnimatePresence>
               {showSearch && searchRes.length > 0 && (
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                  style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#0f1221', border: '1px solid #1a2035', borderRadius: 10, zIndex: 100, overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,0.6)', width: 280 }}>
+                  style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: 'rgba(10,12,28,0.97)', border: '1px solid rgba(99,102,241,0.16)', borderRadius: 12, zIndex: 100, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(99,102,241,0.06)', width: 290, backdropFilter: 'blur(20px)' }}>
                   {searchRes.map(r => (
                     <button key={r.symbol} onClick={() => select(r.symbol)}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '10px 14px', background: 'none', border: 'none', borderBottom: '1px solid #1a2035', cursor: 'pointer', textAlign: 'left' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#080b14')}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '11px 15px', background: 'none', border: 'none', borderBottom: '1px solid rgba(99,102,241,0.08)', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.07)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
                       <div>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: BLUE, fontFamily: 'DM Mono, monospace' }}>{r.symbol}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#818cf8', fontFamily: 'DM Mono, monospace' }}>{r.symbol}</span>
                         <span style={{ fontSize: 11, color: '#475569', marginLeft: 8, display: 'block', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description}</span>
                       </div>
-                      <span style={{ fontSize: 10, color: '#475569', background: '#1a2035', padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>{r.type}</span>
+                      <span style={{ fontSize: 10, color: '#475569', background: 'rgba(99,102,241,0.10)', padding: '2px 7px', borderRadius: 4, flexShrink: 0 }}>{r.type}</span>
                     </button>
                   ))}
                 </motion.div>
@@ -1150,7 +1176,7 @@ export default function App() {
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 22, background: 'rgba(3,3,10,0.5)' }}>
           <AnimatePresence mode="wait">
             <motion.div key={tab + symbol}
               initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
