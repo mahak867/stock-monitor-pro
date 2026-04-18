@@ -12,7 +12,7 @@
 [![Stripe](https://img.shields.io/badge/Payments-Stripe-635BFF?style=flat-square&logo=stripe)](https://stripe.com/)
 [![Claude AI](https://img.shields.io/badge/AI-Claude%20Sonnet-CC785C?style=flat-square)](https://anthropic.com/)
 
-> A full-stack, investor-ready stock monitoring platform with live WebSocket streaming, AI-powered paper trading, deep symbol search, portfolio analytics, and Stripe-powered premium subscriptions.
+> A full-stack, investor-ready stock monitoring platform with **three global market modes** (🇺🇸 US · 🇮🇳 India · ₿ Crypto), live WebSocket streaming, AI-powered paper trading, deep symbol search, portfolio analytics, and Stripe-powered premium subscriptions.
 
 </div>
 
@@ -22,6 +22,7 @@
 
 | Feature | Description |
 |---|---|
+| 🌍 **Global Market Mode Switcher** | One-click mode selector in the sidebar — choose 🇺🇸 US, 🇮🇳 India, or ₿ Crypto; everything updates automatically |
 | 📊 **Live Technical Charts** | Real-time price charts with SMA, EMA overlays and volume bars |
 | ⚡ **WebSocket Streaming** | Real-time trade data via Finnhub WebSocket with automatic REST fallback |
 | 🤖 **Claude AI Trade Assistant** | Full chat interface — analyze stocks, get buy/sell recommendations, execute simulated paper trades, and set price alerts via natural language |
@@ -33,10 +34,42 @@
 | 🔔 **Smart Price Alerts** | Auto-checking alert system with toast notifications when thresholds are crossed |
 | 🔎 **Deep Symbol Search** | Live quote preview in results, keyboard navigation (↑↓ Enter Esc), recently viewed history |
 | 📈 **Market Overview Bar** | S&P 500, Nasdaq 100, Dow Jones, Nifty 50 live mini-cards + US/IN market-open status |
-| 🌏 **Multi-Market** | US stocks, Indian NSE equities, and crypto assets in one dashboard |
 | 🧮 **Fundamentals Panel** | P/E, EPS, Beta, ROE, 52-week range, analyst recommendations, EPS history chart |
 | 📱 **Responsive Layout** | Collapsible sidebar, works on desktop and tablet |
 | 🌐 **Finnhub Integration** | Real stock quotes, candles, news, and symbol search |
+
+---
+
+## 🌍 Market Modes
+
+Stock Monitor Pro supports **three global market modes**, selectable from the sidebar at any time. Switching modes updates the entire app instantly — ticker tape, dashboard symbol, market status badge, and the Markets tab all reflect the chosen market.
+
+### 🇺🇸 US Market
+- **Default symbol:** `AAPL`
+- **Ticker tape:** AAPL · MSFT · TSLA · NVDA · GOOGL · AMZN · META
+- **Status badge:** `● US OPEN` (9:30–16:00 ET, Mon–Fri) or `○ US CLOSED`
+- **Markets tab:** Top 10 US stocks (Apple, Microsoft, Alphabet, Amazon, NVIDIA, Tesla, Meta, Netflix, JPMorgan, Berkshire)
+
+### 🇮🇳 India Market
+- **Default symbol:** `NSE:RELIANCE`
+- **Ticker tape:** RELIANCE · TCS · HDFCBANK · INFY · ICICIBANK · WIPRO
+- **Status badge:** `● IN OPEN` (9:15–15:30 IST, Mon–Fri) or `○ IN CLOSED`
+- **Markets tab:** Top 10 NSE stocks (Reliance, TCS, HDFC Bank, Infosys, ICICI Bank, Wipro, HUL, Bajaj Finance, Adani, Tata Motors)
+
+### ₿ Crypto
+- **Default symbol:** `BTC`
+- **Ticker tape:** BTC · ETH · SOL · BNB · XRP · ADA · DOGE
+- **Status badge:** `● 24/7` (crypto never closes)
+- **Markets tab:** BTC, ETH, SOL, BNB, XRP, ADA, DOGE, MATIC
+
+### Sidebar switcher
+
+| Sidebar state | Appearance |
+|---|---|
+| **Expanded** | Three pill buttons `🇺🇸 US` · `🇮🇳 India` · `₿ Crypto` in a segmented control |
+| **Collapsed** | Three compact emoji icon buttons stacked vertically |
+
+The active mode is persisted to `localStorage` via Zustand, so your market preference is remembered across sessions.
 
 ---
 
@@ -69,19 +102,23 @@ The **AI Trader** tab gives you a full chat interface powered by Claude Sonnet. 
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  📈 StockPro  │  AAPL  ● US OPEN       [ Search symbol… ]                   │
+│  📈 StockPro  │  AAPL  🇺🇸 US Market  ● US OPEN  [ Search symbol… ]         │
 ├───────────────┼──────────────────────────────────────────────────────────────┤
-│               │  SPX +0.4%  QQQ +0.6%  DJI -0.1%  NIFTY +0.8%             │
-│  Dashboard ●  ├──────────────────────────────────────────────────────────────┤
-│  Markets      │  AAPL  $171.34  +1.2%  ● LIVE          [Refresh]            │
-│  Portfolio    │  ▁▂▃▄▅▆▅▄▆▇▆▅▄▃▄▅▆▇▆▅ ─ SMA ··· EMA  ▌ Vol               │
-│  Watchlist    │  About    P/E: 28.4   Beta: 1.24   52W: $124–$199           │
-│  Screener     │  Claude  [Analyze AAPL ▶]   "Strong momentum..."            │
-│  AI Trader    ├──────────────────────────────────────────────────────────────┤
-│  Settings     │  ⭐ Watchlist          🔔 Alerts                             │
-│               │  AAPL ● $171  +1.2%   TSLA above $280 ✓                    │
-│  [Upgrade →]  │  TSLA   $251  -0.4%                                         │
-│  👤 Mahak     │  MSFT   $382  +0.8%                                         │
+│  ┌──────────┐ │  SPX +0.4%  QQQ +0.6%  DJI -0.1%  NIFTY +0.8%             │
+│  │🇺🇸 US    │ ├──────────────────────────────────────────────────────────────┤
+│  │🇮🇳 India │ │  AAPL  $171.34  +1.2%  ● LIVE          [Refresh]            │
+│  │₿ Crypto  │ │  ▁▂▃▄▅▆▅▄▆▇▆▅▄▃▄▅▆▇▆▅ ─ SMA ··· EMA  ▌ Vol               │
+│  └──────────┘ │  About    P/E: 28.4   Beta: 1.24   52W: $124–$199           │
+│  Dashboard ●  │  Claude  [Analyze AAPL ▶]   "Strong momentum..."            │
+│  Markets      ├──────────────────────────────────────────────────────────────┤
+│  Portfolio    │  ⭐ Watchlist          🔔 Alerts                             │
+│  Watchlist    │  AAPL ● $171  +1.2%   TSLA above $280 ✓                    │
+│  Screener     │  TSLA   $251  -0.4%                                         │
+│  AI Trader    │  MSFT   $382  +0.8%                                         │
+│  Settings     │                                                              │
+│               │                                                              │
+│  [Upgrade →]  │                                                              │
+│  👤 Mahak     │                                                              │
 └───────────────┴──────────────────────────────────────────────────────────────┘
 ```
 
