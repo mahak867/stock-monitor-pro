@@ -51,9 +51,12 @@ export const safeN = (v: unknown): number => {
 const MOCK: Record<string, number> = {
   AAPL:171, MSFT:382, GOOGL:176, TSLA:251, NVDA:908, AMZN:186,
   META:521, NFLX:632, JPM:198, BRK_B:415, 'BRK.B':415,
+  // Index ETFs
+  SPY:520, QQQ:445, DIA:395,
   BTC:67400, ETH:3520, SOL:148, BNB:412, XRP:0.52, ADA:0.44, DOGE:0.09,
   'NSE:RELIANCE':2941,'NSE:TCS':3821,'NSE:HDFCBANK':1641,
   'NSE:INFY':1421,'NSE:ICICIBANK':1041,'NSE:WIPRO':462,
+  'NSE:NIFTY50':22500,
 };
 
 export function mockQuote(symbol: string): Quote {
@@ -239,3 +242,82 @@ export const CRYPTO_LIST = [
   {symbol:'MATIC',name:'Polygon'},
 ];
 
+// ─── Market Indices ────────────────────────────────────────────────────────────
+export const MARKET_INDICES = [
+  { symbol: 'SPY',          name: 'S&P 500',    abbr: 'SPX'   },
+  { symbol: 'QQQ',          name: 'Nasdaq 100', abbr: 'QQQ'   },
+  { symbol: 'DIA',          name: 'Dow Jones',  abbr: 'DJI'   },
+  { symbol: 'NSE:NIFTY50',  name: 'Nifty 50',  abbr: 'NIFTY' },
+] as const;
+
+// ─── Market-hours helpers ─────────────────────────────────────────────────────
+export const isUSMarketOpen = (): boolean => {
+  try {
+    const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const d = et.getDay();
+    if (d === 0 || d === 6) return false;
+    const m = et.getHours() * 60 + et.getMinutes();
+    return m >= 570 && m < 960; // 9:30–16:00 ET
+  } catch { return false; }
+};
+
+export const isIndiaMarketOpen = (): boolean => {
+  try {
+    const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const d = ist.getDay();
+    if (d === 0 || d === 6) return false;
+    const m = ist.getHours() * 60 + ist.getMinutes();
+    return m >= 555 && m < 930; // 9:15–15:30 IST
+  } catch { return false; }
+};
+
+// ─── WebSocket streaming ──────────────────────────────────────────────────────
+export class FinnhubWS {
+  private ws: WebSocket | null = null;
+  private subs = new Set<string>();
+  private handlers = new Map<string, Set<(price: number) => void>>();
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private closed = false;
+
+  constructor(private readonly apiKey: string) {
+    this.connect();
+  }
+
+  private connect() {
+    if (this.closed || typeof window === 'undefined') return;
+    try {
+      this.ws = new WebSocket(`wss://ws.finnhub.io?token=${this.apiKey}`);
+      this.ws.onopen = () => this.subs.forEach(s => this.sendMsg({ type: 'subscribe', symbol: s }));
+      this.ws.onmessage = ({ data }) => {
+        try {
+          const msg = JSON.parse(data as string) as { type: string; data?: Array<{ p: number; s: string }> };
+          if (msg.type === 'trade') msg.data?.forEach(t => this.handlers.get(t.s)?.forEach(h => h(t.p)));
+        } catch { /* ignore */ }
+      };
+      this.ws.onclose = () => { if (!this.closed) this.reconnectTimer = setTimeout(() => this.connect(), 4000); };
+      this.ws.onerror  = () => this.ws?.close();
+    } catch { /* SSR / unsupported */ }
+  }
+
+  private sendMsg(msg: unknown) {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+  }
+
+  /** Subscribe to real-time trades. Returns an unsubscribe function. */
+  subscribe(symbol: string, handler: (price: number) => void): () => void {
+    if (!this.subs.has(symbol)) { this.subs.add(symbol); this.sendMsg({ type: 'subscribe', symbol }); }
+    if (!this.handlers.has(symbol)) this.handlers.set(symbol, new Set());
+    this.handlers.get(symbol)!.add(handler);
+    return () => {
+      const s = this.handlers.get(symbol);
+      s?.delete(handler);
+      if (!s?.size) { this.subs.delete(symbol); this.sendMsg({ type: 'unsubscribe', symbol }); }
+    };
+  }
+
+  destroy() {
+    this.closed = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.ws?.close();
+  }
+}

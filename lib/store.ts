@@ -27,6 +27,8 @@ interface Store {
   removeAlert: (id: string) => void;
   toggleAlert: (id: string) => void;
   claudeKey: string; setClaudeKey: (k: string) => void;
+  recentSymbols: string[]; addRecent: (sym: string) => void;
+  triggerAlert: (id: string) => void;
 }
 
 export const useStore = create<Store>()(persist(
@@ -53,6 +55,9 @@ export const useStore = create<Store>()(persist(
     removeAlert: (id) => set((s) => ({ alerts: s.alerts.filter(x => x.id!==id) })),
     toggleAlert: (id) => set((s) => ({ alerts: s.alerts.map(x => x.id===id ? {...x,active:!x.active} : x) })),
     claudeKey: '', setClaudeKey: (k) => set({ claudeKey: k }),
+    recentSymbols: [],
+    addRecent: (sym) => set((s) => ({ recentSymbols: [sym, ...s.recentSymbols.filter(x => x !== sym)].slice(0, 8) })),
+    triggerAlert: (id) => set((s) => ({ alerts: s.alerts.map(x => x.id === id ? { ...x, active: false, triggered: true } : x) })),
   }),
   { name: 'qp-v4' }
 ));

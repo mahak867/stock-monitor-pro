@@ -20,6 +20,7 @@ import {
   getRecommendations, getNews, getCryptoQuote, searchSymbol,
   getClaudeAnalysis, mockCandles,
   US_STOCKS, INDIA_STOCKS, CRYPTO_LIST,
+  MARKET_INDICES, FinnhubWS, isUSMarketOpen, isIndiaMarketOpen,
   safeN,
   type Quote, type Candle, type Profile, type Metrics,
   type NewsItem, type SearchResult, type EarningsItem, type RecommendationItem,
@@ -88,6 +89,73 @@ function Badge({ dp }: { dp: number | undefined }) {
   );
 }
 
+
+// -- Market overview bar ─────────────────────────────────────────────────────
+function MarketOverviewBar({ onSelect }: { onSelect: (s: string) => void }) {
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+  const [usOpen] = useState(isUSMarketOpen);
+  const [inOpen] = useState(isIndiaMarketOpen);
+
+  useEffect(() => {
+    const load = () => MARKET_INDICES.forEach(({ symbol }) =>
+      getQuote(symbol).then(q => setQuotes(p => ({ ...p, [symbol]: q })))
+    );
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+      <span style={{
+        fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 20, letterSpacing: '0.05em',
+        background: usOpen ? 'rgba(16,185,129,0.10)' : 'rgba(100,116,139,0.08)',
+        color: usOpen ? '#10b981' : '#64748b',
+        border: `1px solid ${usOpen ? 'rgba(16,185,129,0.22)' : 'rgba(100,116,139,0.15)'}`,
+      }}>
+        {usOpen ? '● US OPEN' : '○ US CLOSED'}
+      </span>
+      <span style={{
+        fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 20, letterSpacing: '0.05em',
+        background: inOpen ? 'rgba(16,185,129,0.10)' : 'rgba(100,116,139,0.08)',
+        color: inOpen ? '#10b981' : '#64748b',
+        border: `1px solid ${inOpen ? 'rgba(16,185,129,0.22)' : 'rgba(100,116,139,0.15)'}`,
+      }}>
+        {inOpen ? '● IN OPEN' : '○ IN CLOSED'}
+      </span>
+      <span style={{ width: 1, height: 16, background: 'rgba(99,102,241,0.15)', flexShrink: 0 }} />
+      {MARKET_INDICES.map(({ symbol, abbr }) => {
+        const q = quotes[symbol];
+        const up = safeN(q?.dp) >= 0;
+        return (
+          <div key={symbol} onClick={() => onSelect(symbol)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+              background: 'rgba(11,13,28,0.8)', border: '1px solid rgba(99,102,241,0.10)',
+              borderRadius: 10, cursor: 'pointer', transition: 'border-color 0.15s',
+              backdropFilter: 'blur(12px)',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.30)')}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.10)')}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#64748b', letterSpacing: '0.05em' }}>{abbr}</span>
+            {q ? (
+              <>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>
+                  ${fmtPrice(q.c)}
+                </span>
+                <span style={{ fontSize: 10, fontWeight: 600, color: up ? UP_COLOR : DOWN_COLOR, fontFamily: 'DM Mono, monospace' }}>
+                  {up ? '+' : ''}{fmtPrice(q.dp)}%
+                </span>
+              </>
+            ) : (
+              <span className="skeleton" style={{ width: 64, height: 14, borderRadius: 4 }} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // -- Ticker tape --------------------------------------------------------------
 function Ticker({ quotes }: { quotes: Record<string, Quote> }) {
@@ -748,56 +816,174 @@ function PortfolioPage({ onSelect }: { onSelect: (s: string) => void }) {
 
 // -- Screener ------------------------------------------------------------------
 function ScreenerPage({ onSelect }: { onSelect: (s: string) => void }) {
+  const { recentSymbols, addRecent } = useStore();
   const [q, setQ] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [focused, setFocused] = useState(-1);
+  const [previewQuotes, setPreviewQuotes] = useState<Record<string, Quote>>({});
+  const [recentQuotes, setRecentQuotes] = useState<Record<string, Quote>>({});
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  // Search with debounce
   useEffect(() => {
-    if (q.length < 2) { setResults([]); return; }
+    if (q.length < 2) { setResults([]); setFocused(-1); return; }
     setLoading(true);
-    const t = setTimeout(() => { searchSymbol(q).then(r => { setResults(r); setLoading(false); }); }, 400);
+    const t = setTimeout(() => {
+      searchSymbol(q).then(r => { setResults(r); setLoading(false); setFocused(-1); });
+    }, 380);
     return () => clearTimeout(t);
   }, [q]);
 
+  // Fetch live quotes for top search results
+  useEffect(() => {
+    if (results.length === 0) return;
+    const top = results.slice(0, 5);
+    top.forEach(r => getQuote(r.symbol).then(qr => setPreviewQuotes(p => ({ ...p, [r.symbol]: qr }))));
+  }, [results]);
+
+  // Fetch quotes for recently viewed
+  useEffect(() => {
+    recentSymbols.forEach(sym => getQuote(sym).then(qr => setRecentQuotes(p => ({ ...p, [sym]: qr }))));
+  }, [recentSymbols]);
+
+  const pick = (sym: string) => { addRecent(sym); onSelect(sym); };
+
+  // Keyboard navigation
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (results.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setFocused(f => Math.min(f + 1, results.length - 1)); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setFocused(f => Math.max(f - 1, 0)); }
+    if (e.key === 'Enter' && focused >= 0) { e.preventDefault(); pick(results[focused].symbol); }
+    if (e.key === 'Escape')    { setQ(''); setResults([]); setFocused(-1); }
+  };
+
   const presets = [
-    { label: 'Magnificent 7', syms: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'] },
+    { label: 'Magnificent 7',    syms: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'] },
     { label: 'Indian Blue Chips', syms: ['NSE:RELIANCE', 'NSE:TCS', 'NSE:HDFCBANK', 'NSE:INFY'] },
-    { label: 'Crypto Top 5', syms: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP'] },
-    { label: 'Finance Leaders', syms: ['JPM', 'BAC', 'GS', 'MS', 'WFC'] },
-    { label: 'AI Plays', syms: ['NVDA', 'MSFT', 'GOOGL', 'AMD', 'PLTR', 'C3.AI'] },
-    { label: 'EV & Clean Energy', syms: ['TSLA', 'RIVN', 'NIO', 'ENPH', 'FSLR'] },
-    { label: 'Indian IT', syms: ['NSE:TCS', 'NSE:INFY', 'NSE:WIPRO', 'NSE:HCLTECH'] },
-    { label: 'Dividend Kings', syms: ['JNJ', 'PG', 'KO', 'MMM', 'CL'] },
+    { label: 'Crypto Top 5',     syms: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP'] },
+    { label: 'Finance Leaders',  syms: ['JPM', 'BAC', 'GS', 'MS', 'WFC'] },
+    { label: 'AI Plays',         syms: ['NVDA', 'MSFT', 'GOOGL', 'AMD', 'PLTR', 'C3.AI'] },
+    { label: 'EV & Clean Energy',syms: ['TSLA', 'RIVN', 'NIO', 'ENPH', 'FSLR'] },
+    { label: 'Indian IT',        syms: ['NSE:TCS', 'NSE:INFY', 'NSE:WIPRO', 'NSE:HCLTECH'] },
+    { label: 'Dividend Kings',   syms: ['JNJ', 'PG', 'KO', 'MMM', 'CL'] },
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>
+      {/* Search */}
       <div className="card" style={{ padding: 20 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9', marginBottom: 14 }}>Symbol Search</div>
-        <div style={{ position: 'relative', marginBottom: 12 }}>
-          <Search size={15} color="#475569" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
-          <input value={q} onChange={e => setQ(e.target.value.toUpperCase())}
-            placeholder="Search stocks, ETFs, indices..."
-            style={{ width: '100%', background: '#06081a', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 8, padding: '10px 12px 10px 38px', fontSize: 13, color: '#f1f5f9', fontFamily: 'DM Mono, monospace', outline: 'none', boxSizing: 'border-box' }} />
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', marginBottom: 14, letterSpacing: '-0.01em' }}>
+          Deep Symbol Search
         </div>
-        {loading && <p style={{ fontSize: 12, color: '#6366f1', textAlign: 'center', padding: '8px 0', fontFamily: 'DM Mono, monospace' }}>Searching...</p>}
+        <div style={{ position: 'relative', marginBottom: results.length > 0 ? 0 : 0 }}>
+          <Search size={15} color="#475569" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={e => setQ(e.target.value.toUpperCase())}
+            onKeyDown={handleKey}
+            placeholder="Search any stock, ETF, crypto, index…"
+            autoComplete="off"
+            style={{
+              width: '100%', background: '#06081a',
+              border: '1px solid rgba(99,102,241,0.16)', borderRadius: 10,
+              padding: '11px 14px 11px 40px', fontSize: 13,
+              color: '#f1f5f9', fontFamily: 'DM Mono, monospace',
+              outline: 'none', boxSizing: 'border-box',
+              transition: 'border-color 0.15s',
+            }}
+            onFocus={e => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.40)')}
+            onBlur={e  => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.16)')}
+          />
+          {loading && (
+            <RefreshCw size={13} color="#6366f1"
+              style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', animation: 'spin 0.8s linear infinite' }} />
+          )}
+        </div>
+
+        {/* Search results with live quote preview */}
         {results.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {results.map(r => (
-              <div key={r.symbol} onClick={() => onSelect(r.symbol)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: '#06081a', border: '1px solid rgba(99,102,241,0.12)' }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = BLUE + '40')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.12)')}>
-                <div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: BLUE, fontFamily: 'DM Mono, monospace' }}>{r.symbol}</span>
-                  <span style={{ fontSize: 12, color: '#64748b', marginLeft: 10 }}>{r.description}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 10 }}>
+            {results.map((r, i) => {
+              const pq = previewQuotes[r.symbol];
+              const up = safeN(pq?.dp) >= 0;
+              return (
+                <div key={r.symbol} onClick={() => pick(r.symbol)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 13px', borderRadius: 9, cursor: 'pointer',
+                    background: focused === i ? 'rgba(99,102,241,0.10)' : '#06081a',
+                    border: `1px solid ${focused === i ? 'rgba(99,102,241,0.35)' : 'rgba(99,102,241,0.10)'}`,
+                    transition: 'all 0.1s',
+                  }}
+                  onMouseEnter={e => { if (focused !== i) { e.currentTarget.style.background = 'rgba(99,102,241,0.06)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.22)'; } }}
+                  onMouseLeave={e => { if (focused !== i) { e.currentTarget.style.background = '#06081a'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.10)'; } }}>
+                  <div style={{ minWidth: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#818cf8', fontFamily: 'DM Mono, monospace' }}>{r.symbol}</span>
+                    <span style={{ fontSize: 11, color: '#64748b', marginLeft: 10 }}>{r.description}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                    {pq ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>${fmtPrice(pq.c)}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: up ? UP_COLOR : DOWN_COLOR, fontFamily: 'DM Mono, monospace' }}>{up ? '+' : ''}{fmtPrice(pq.dp)}%</span>
+                      </div>
+                    ) : (
+                      <span className="skeleton" style={{ width: 80, height: 14, borderRadius: 4 }} />
+                    )}
+                    <span style={{ fontSize: 10, color: '#475569', background: 'rgba(99,102,241,0.10)', padding: '2px 7px', borderRadius: 4, flexShrink: 0 }}>{r.type}</span>
+                  </div>
                 </div>
-                <span style={{ fontSize: 10, color: '#475569', background: 'rgba(99,102,241,0.12)', padding: '3px 8px', borderRadius: 4 }}>{r.type}</span>
-              </div>
-            ))}
+              );
+            })}
+            <p style={{ fontSize: 10, color: '#2d3a52', textAlign: 'center', marginTop: 4, fontFamily: 'DM Mono, monospace' }}>
+              ↑↓ navigate · Enter select · Esc clear
+            </p>
           </div>
         )}
       </div>
+
+      {/* Recently Viewed */}
+      {recentSymbols.length > 0 && q.length === 0 && (
+        <div className="card" style={{ padding: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+            Recently Viewed
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {recentSymbols.map(sym => {
+              const rq = recentQuotes[sym];
+              const up = safeN(rq?.dp) >= 0;
+              return (
+                <div key={sym} onClick={() => pick(sym)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
+                    background: '#06081a', border: '1px solid rgba(99,102,241,0.12)',
+                    borderRadius: 9, cursor: 'pointer', transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.35)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.12)'; }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#818cf8', fontFamily: 'DM Mono, monospace' }}>
+                    {sym.replace('NSE:', '')}
+                  </span>
+                  {rq ? (
+                    <>
+                      <span style={{ fontSize: 12, color: '#f1f5f9', fontFamily: 'DM Mono, monospace' }}>${fmtPrice(rq.c)}</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: up ? UP_COLOR : DOWN_COLOR, fontFamily: 'DM Mono, monospace' }}>
+                        {up ? '+' : ''}{fmtPrice(rq.dp)}%
+                      </span>
+                    </>
+                  ) : (
+                    <span className="skeleton" style={{ width: 64, height: 12, borderRadius: 4 }} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Preset Screens */}
       <div className="card" style={{ padding: 20 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9', marginBottom: 14 }}>Preset Screens</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -806,7 +992,7 @@ function ScreenerPage({ onSelect }: { onSelect: (s: string) => void }) {
               <div style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9', marginBottom: 8 }}>{p.label}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {p.syms.map(s => (
-                  <button key={s} onClick={() => onSelect(s)}
+                  <button key={s} onClick={() => pick(s)}
                     style={{ padding: '4px 10px', background: '#090b1c', border: '1px solid rgba(99,102,241,0.12)', borderRadius: 20, fontSize: 11, color: '#64748b', cursor: 'pointer', fontFamily: 'DM Mono, monospace', transition: 'all 0.15s' }}
                     onMouseEnter={e => { e.currentTarget.style.borderColor = BLUE; e.currentTarget.style.color = BLUE; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.12)'; e.currentTarget.style.color = '#64748b'; }}>
@@ -821,6 +1007,7 @@ function ScreenerPage({ onSelect }: { onSelect: (s: string) => void }) {
     </div>
   );
 }
+
 
 // -- Settings ------------------------------------------------------------------
 function SettingsPage() {
@@ -962,7 +1149,7 @@ type Tab = 'dashboard' | 'markets' | 'portfolio' | 'watchlist' | 'screener' | 's
 
 export default function App() {
   const { isSignedIn, isLoaded, user } = useUser();
-  const { tab, setTab, symbol, setSymbol } = useStore();
+  const { tab, setTab, symbol, setSymbol, addRecent, alerts, triggerAlert } = useStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [searchRes, setSearchRes] = useState<SearchResult[]>([]);
@@ -970,9 +1157,13 @@ export default function App() {
   const [tickerQ, setTickerQ] = useState<Record<string, Quote>>({});
   const searchRef = useRef<HTMLDivElement>(null);
 
+  // WebSocket for real-time ticker updates
+  const wsRef = useRef<FinnhubWS | null>(null);
   useEffect(() => {
     if (!isSignedIn) return;
+    const apiKey = process.env.NEXT_PUBLIC_FINNHUB_API_KEY || 'demo';
     const syms = ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'GOOGL', 'BTC', 'ETH'];
+    // Initial REST poll
     const loadTicker = () => {
       syms.forEach(s => {
         const fn = ['BTC', 'ETH'].includes(s) ? getCryptoQuote : getQuote;
@@ -981,7 +1172,27 @@ export default function App() {
     };
     loadTicker();
     const t = setInterval(loadTicker, 25000);
-    return () => clearInterval(t);
+    // Real-time WebSocket layer (if real API key is configured)
+    if (apiKey !== 'demo') {
+      const ws = new FinnhubWS(apiKey);
+      wsRef.current = ws;
+      syms.forEach(s => {
+        ws.subscribe(s, (price) => {
+          setTickerQ(p => {
+            const existing = p[s];
+            if (!existing) return p;
+            const d = price - existing.pc;
+            const dp = existing.pc ? (d / existing.pc) * 100 : 0;
+            return { ...p, [s]: { ...existing, c: price, d, dp } };
+          });
+        });
+      });
+    }
+    return () => {
+      clearInterval(t);
+      wsRef.current?.destroy();
+      wsRef.current = null;
+    };
   }, [isSignedIn]);
 
   useEffect(() => {
@@ -989,6 +1200,34 @@ export default function App() {
     const t = setTimeout(() => searchSymbol(searchQ).then(setSearchRes), 300);
     return () => clearTimeout(t);
   }, [searchQ]);
+
+  // Alert auto-checker
+  const [alertToast, setAlertToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const check = async () => {
+      const active = alerts.filter(a => a.active && !a.triggered);
+      for (const alert of active) {
+        try {
+          const q = await getQuote(alert.symbol);
+          const price = safeN(q.c);
+          if (price > 0) {
+            const hit =
+              (alert.condition === 'above' && price >= alert.price) ||
+              (alert.condition === 'below' && price <= alert.price);
+            if (hit) {
+              triggerAlert(alert.id);
+              setAlertToast(`🔔 ${alert.symbol} is ${alert.condition} $${alert.price} (now $${price.toFixed(2)})`);
+              setTimeout(() => setAlertToast(null), 6000);
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    };
+    check();
+    const t = setInterval(check, 30000);
+    return () => clearInterval(t);
+  }, [isSignedIn, alerts, triggerAlert]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -998,7 +1237,7 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const select = (s: string) => { setSymbol(s); setTab('dashboard'); setSearchQ(''); setSearchRes([]); setShowSearch(false); };
+  const select = (s: string) => { setSymbol(s); setTab('dashboard'); setSearchQ(''); setSearchRes([]); setShowSearch(false); addRecent(s); };
 
   const nav: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
@@ -1056,6 +1295,29 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#03030a', fontFamily: 'Inter, system-ui, sans-serif' }}>
+      {/* Alert Toast */}
+      <AnimatePresence>
+        {alertToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -20, x: '-50%' }}
+            style={{
+              position: 'fixed', top: 16, left: '50%', zIndex: 1000,
+              background: 'rgba(10,12,28,0.95)', border: '1px solid rgba(99,102,241,0.30)',
+              borderRadius: 12, padding: '12px 20px', fontSize: 13, fontWeight: 600,
+              color: '#f1f5f9', backdropFilter: 'blur(20px)',
+              boxShadow: '0 16px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(99,102,241,0.10)',
+              display: 'flex', alignItems: 'center', gap: 10, maxWidth: 440,
+            }}>
+            <Bell size={14} color="#f59e0b" />
+            {alertToast}
+            <button onClick={() => setAlertToast(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475569', padding: 2, marginLeft: 4 }}>
+              <X size={13} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Sidebar */}
       <motion.aside
         animate={{ width: sidebarOpen ? 210 : 62 }}
@@ -1140,8 +1402,22 @@ export default function App() {
 
         {/* Header */}
         <div style={{ borderBottom: '1px solid rgba(99,102,241,0.10)', background: 'rgba(3,3,10,0.80)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', padding: '11px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.01em' }}>
-            {tab === 'dashboard' ? symbol.replace('NSE:', '') : tab.charAt(0).toUpperCase() + tab.slice(1)}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.01em' }}>
+              {tab === 'dashboard' ? symbol.replace('NSE:', '') : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {isUSMarketOpen() && (
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 7px', borderRadius: 20, background: 'rgba(16,185,129,0.10)', color: '#10b981', border: '1px solid rgba(16,185,129,0.20)', letterSpacing: '0.06em' }}>
+                  ● US OPEN
+                </span>
+              )}
+              {isIndiaMarketOpen() && (
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 7px', borderRadius: 20, background: 'rgba(16,185,129,0.10)', color: '#10b981', border: '1px solid rgba(16,185,129,0.20)', letterSpacing: '0.06em' }}>
+                  ● IN OPEN
+                </span>
+              )}
+            </div>
           </div>
           <div ref={searchRef} style={{ position: 'relative' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(6,8,26,0.9)', border: '1px solid rgba(99,102,241,0.14)', borderRadius: 10, padding: '8px 13px', width: 230, transition: 'border-color 0.2s' }}
@@ -1182,7 +1458,9 @@ export default function App() {
               initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}>
               {tab === 'dashboard' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16, maxWidth: 1600 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 1600 }}>
+                  <MarketOverviewBar onSelect={select} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
                     <SymbolView symbol={symbol} />
                     <NewsPanel symbol={symbol} />
@@ -1191,6 +1469,7 @@ export default function App() {
                     <WatchlistPanel onSelect={select} selected={symbol} />
                     <AlertsPanel />
                   </div>
+                </div>
                 </div>
               )}
               {tab === 'markets' && <MarketsGrid onSelect={select} />}
