@@ -1,5 +1,6 @@
 ﻿"use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import Image from "next/image";
 import { useUser, UserButton, SignIn } from "@clerk/nextjs";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
@@ -236,8 +237,8 @@ function AboutPanel({ symbol }: { symbol: string }) {
       {profile && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #1a2035' }}>
           {profile.logo && (
-            <img src={profile.logo} alt={profile.name}
-              style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'contain', background: '#fff', padding: 3 }} />
+            <Image src={profile.logo} alt={profile.name} width={36} height={36}
+              style={{ borderRadius: 8, objectFit: 'contain', background: '#fff', padding: 3 }} />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#e8eaf0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</div>

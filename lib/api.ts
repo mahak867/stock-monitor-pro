@@ -180,16 +180,25 @@ export const getCryptoQuote = async (sym: string): Promise<Quote> => {
 
 export const getClaudeAnalysis = async (key: string, sym: string, q: Quote, m: Metrics|null): Promise<string> => {
   try {
-    const prompt = `Analyze ${sym}: Price $${safeN(q.c).toFixed(2)}, Change ${safeN(q.dp).toFixed(2)}%, P/E ${m?.peNormalizedAnnual?.toFixed(1)??'N/A'}, EPS $${m?.epsNormalizedAnnual?.toFixed(2)??'N/A'}, Beta ${m?.beta?.toFixed(2)??'N/A'}, ROE ${m?.roeRfy?.toFixed(1)??'N/A'}%, 52W Range $${safeN(m?.weekLow52).toFixed(2)}-$${safeN(m?.weekHigh52).toFixed(2)}.
-
-Write a 3-paragraph analyst note: (1) technical momentum, (2) fundamental valuation, (3) key risks. Max 180 words. Plain text only, no headers or bullets.`;
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:350,messages:[{role:'user',content:prompt}]}),
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol: sym,
+        price: safeN(q.c),
+        changePercent: safeN(q.dp),
+        pe: m?.peNormalizedAnnual,
+        eps: m?.epsNormalizedAnnual,
+        beta: m?.beta,
+        roe: m?.roeRfy,
+        weekLow52: m?.weekLow52,
+        weekHigh52: m?.weekHigh52,
+        apiKey: key,
+      }),
     });
-    const data=await res.json();
-    return data.content?.[0]?.text||'Analysis unavailable.';
+    const data = await res.json();
+    if (!res.ok) return data.error || 'Analysis unavailable.';
+    return data.analysis || 'Analysis unavailable.';
   } catch { return 'Unable to connect to Claude. Check your API key.'; }
 };
 
