@@ -1748,7 +1748,7 @@ type Tab = 'dashboard' | 'markets' | 'portfolio' | 'watchlist' | 'screener' | 'c
 
 export default function App() {
   const { isSignedIn, isLoaded, user } = useUser();
-  const { tab, setTab, symbol, setSymbol, addRecent, alerts, triggerAlert, addAlert, notifyEmail } = useStore();
+  const { tab, setTab, symbol, setSymbol, market, setMarket, addRecent, alerts, triggerAlert, addAlert, notifyEmail } = useStore();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQ, setSearchQ] = useState('');
   const [searchRes, setSearchRes] = useState<SearchResult[]>([]);
@@ -1756,23 +1756,46 @@ export default function App() {
   const [tickerQ, setTickerQ] = useState<Record<string, Quote>>({});
   const searchRef = useRef<HTMLDivElement>(null);
 
+  // Market-mode default symbol
+  const MARKET_DEFAULTS: Record<'us' | 'india' | 'crypto', string> = {
+    us: 'AAPL',
+    india: 'NSE:RELIANCE',
+    crypto: 'BTC',
+  };
+
+  // When market mode changes, switch dashboard to the mode's flagship symbol
+  useEffect(() => {
+    setSymbol(MARKET_DEFAULTS[market]);
+    setTab('dashboard');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market]);
+
+  // Ticker symbols per market
+  const TICKER_SYMS: Record<'us' | 'india' | 'crypto', string[]> = {
+    us:     ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'GOOGL', 'AMZN', 'META'],
+    india:  ['NSE:RELIANCE', 'NSE:TCS', 'NSE:HDFCBANK', 'NSE:INFY', 'NSE:ICICIBANK', 'NSE:WIPRO'],
+    crypto: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'DOGE'],
+  };
+
   // WebSocket for real-time ticker updates
   const wsRef = useRef<FinnhubWS | null>(null);
   useEffect(() => {
     if (!isSignedIn) return;
     const apiKey = process.env.NEXT_PUBLIC_FINNHUB_API_KEY || 'demo';
-    const syms = ['AAPL', 'MSFT', 'TSLA', 'NVDA', 'GOOGL', 'BTC', 'ETH'];
+    const syms = TICKER_SYMS[market];
+    const CRYPTO_SYMS = new Set(TICKER_SYMS.crypto);
     // Initial REST poll
     const loadTicker = () => {
+      setTickerQ({});
       syms.forEach(s => {
-        const fn = ['BTC', 'ETH'].includes(s) ? getCryptoQuote : getQuote;
+        const fn = CRYPTO_SYMS.has(s) ? getCryptoQuote : getQuote;
         fn(s).then(q => setTickerQ(p => ({ ...p, [s]: q })));
       });
     };
     loadTicker();
     const t = setInterval(loadTicker, 25000);
-    // Real-time WebSocket layer (if real API key is configured)
-    if (apiKey !== 'demo') {
+    // Real-time WebSocket layer (if real API key is configured, US only)
+    if (apiKey !== 'demo' && market === 'us') {
       const ws = new FinnhubWS(apiKey);
       wsRef.current = ws;
       syms.forEach(s => {
@@ -1792,7 +1815,8 @@ export default function App() {
       wsRef.current?.destroy();
       wsRef.current = null;
     };
-  }, [isSignedIn]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSignedIn, market]);
 
   useEffect(() => {
     if (searchQ.length < 2) { setSearchRes([]); return; }
@@ -1966,6 +1990,49 @@ export default function App() {
           </button>
         </div>
 
+        {/* Market mode switcher */}
+        <div style={{ padding: '0 8px', marginBottom: 14 }}>
+          {sidebarOpen ? (
+            <div style={{ display: 'flex', gap: 4, background: 'rgba(6,8,26,0.9)', borderRadius: 10, padding: 4, border: '1px solid rgba(99,102,241,0.10)' }}>
+              {([
+                { id: 'us',     label: '🇺🇸 US',     color: '#60a5fa' },
+                { id: 'india',  label: '🇮🇳 India',   color: '#f97316' },
+                { id: 'crypto', label: '₿ Crypto',    color: '#f59e0b' },
+              ] as const).map(m => (
+                <button key={m.id} onClick={() => setMarket(m.id)}
+                  style={{
+                    flex: 1, padding: '5px 0', borderRadius: 7, fontSize: 11, fontWeight: 700,
+                    cursor: 'pointer', transition: 'all 0.15s', border: 'none',
+                    background: market === m.id ? `rgba(99,102,241,0.18)` : 'transparent',
+                    color: market === m.id ? '#f1f5f9' : '#475569',
+                    outline: market === m.id ? `1px solid rgba(99,102,241,0.35)` : 'none',
+                  }}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            // Collapsed: show single icon cycling through modes
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+              {([
+                { id: 'us',     icon: '🇺🇸' },
+                { id: 'india',  icon: '🇮🇳' },
+                { id: 'crypto', icon: '₿' },
+              ] as const).map(m => (
+                <button key={m.id} onClick={() => setMarket(m.id)}
+                  style={{
+                    width: 34, height: 26, borderRadius: 7, fontSize: 14, cursor: 'pointer',
+                    background: market === m.id ? 'rgba(99,102,241,0.18)' : 'transparent',
+                    border: market === m.id ? '1px solid rgba(99,102,241,0.35)' : '1px solid transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                  {m.icon}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Nav */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, padding: '0 8px' }}>
           {nav.map(({ id, label, icon }) => (
@@ -2020,15 +2087,39 @@ export default function App() {
             <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.01em' }}>
               {tab === 'dashboard' ? symbol.replace('NSE:', '') : tab.charAt(0).toUpperCase() + tab.slice(1)}
             </div>
+            {/* Market mode badge */}
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, letterSpacing: '0.04em',
+              background: market === 'us' ? 'rgba(96,165,250,0.10)' : market === 'india' ? 'rgba(249,115,22,0.10)' : 'rgba(245,158,11,0.10)',
+              color: market === 'us' ? '#60a5fa' : market === 'india' ? '#f97316' : '#f59e0b',
+              border: `1px solid ${market === 'us' ? 'rgba(96,165,250,0.22)' : market === 'india' ? 'rgba(249,115,22,0.22)' : 'rgba(245,158,11,0.22)'}`,
+            }}>
+              {market === 'us' ? '🇺🇸 US Market' : market === 'india' ? '🇮🇳 India Market' : '₿ Crypto'}
+            </span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              {isUSMarketOpen() && (
+              {market === 'us' && isUSMarketOpen() && (
                 <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 7px', borderRadius: 20, background: 'rgba(16,185,129,0.10)', color: '#10b981', border: '1px solid rgba(16,185,129,0.20)', letterSpacing: '0.06em' }}>
                   ● US OPEN
                 </span>
               )}
-              {isIndiaMarketOpen() && (
+              {market === 'us' && !isUSMarketOpen() && (
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 7px', borderRadius: 20, background: 'rgba(100,116,139,0.08)', color: '#64748b', border: '1px solid rgba(100,116,139,0.15)', letterSpacing: '0.06em' }}>
+                  ○ US CLOSED
+                </span>
+              )}
+              {market === 'india' && isIndiaMarketOpen() && (
                 <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 7px', borderRadius: 20, background: 'rgba(16,185,129,0.10)', color: '#10b981', border: '1px solid rgba(16,185,129,0.20)', letterSpacing: '0.06em' }}>
                   ● IN OPEN
+                </span>
+              )}
+              {market === 'india' && !isIndiaMarketOpen() && (
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 7px', borderRadius: 20, background: 'rgba(100,116,139,0.08)', color: '#64748b', border: '1px solid rgba(100,116,139,0.15)', letterSpacing: '0.06em' }}>
+                  ○ IN CLOSED
+                </span>
+              )}
+              {market === 'crypto' && (
+                <span style={{ fontSize: 9, fontWeight: 700, padding: '3px 7px', borderRadius: 20, background: 'rgba(16,185,129,0.10)', color: '#10b981', border: '1px solid rgba(16,185,129,0.20)', letterSpacing: '0.06em' }}>
+                  ● 24/7
                 </span>
               )}
             </div>
