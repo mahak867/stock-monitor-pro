@@ -11,6 +11,7 @@
 [![Clerk](https://img.shields.io/badge/Auth-Clerk-6C47FF?style=flat-square)](https://clerk.com/)
 [![Stripe](https://img.shields.io/badge/Payments-Stripe-635BFF?style=flat-square&logo=stripe)](https://stripe.com/)
 [![Claude AI](https://img.shields.io/badge/AI-Claude%20Sonnet-CC785C?style=flat-square)](https://anthropic.com/)
+[![CI](https://github.com/mahak867/stock-monitor-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/mahak867/stock-monitor-pro/actions/workflows/ci.yml)
 
 > A full-stack, investor-ready stock monitoring platform with **three global market modes** (🇺🇸 US · 🇮🇳 India · ₿ Crypto), live WebSocket streaming, AI-powered paper trading, deep symbol search, portfolio analytics, and Stripe-powered premium subscriptions.
 
@@ -299,6 +300,52 @@ To make specific routes public (e.g. a landing page), use `createRouteMatcher` f
 
 ---
 
+## 🛡️ Security Model
+
+### Route protection
+
+| Route | Protection layer |
+|---|---|
+| All app pages | Clerk middleware (`auth.protect()`) |
+| `/api/analyze` | Clerk middleware **+** explicit `auth.protect()` in handler |
+| `/api/claude-trade` | Clerk middleware **+** explicit `auth.protect()` in handler |
+| `/api/checkout` | Clerk middleware |
+| `/api/alpaca-order` | Clerk middleware |
+| `/api/notify` | Clerk middleware |
+| `/api/webhooks/stripe` | Public (required by Stripe) — verified via HMAC signature |
+
+### Stripe webhook signature verification
+
+The `/api/webhooks/stripe` handler is intentionally public so Stripe can reach it.
+Every request is verified with [`stripe.webhooks.constructEvent`](https://stripe.com/docs/webhooks/signatures) using the `STRIPE_WEBHOOK_SECRET` environment variable.
+Requests with a missing or invalid `stripe-signature` header are rejected with HTTP 400 before any business logic runs.
+
+```
+POST /api/webhooks/stripe
+  ├─ Read raw body (required for HMAC check)
+  ├─ Reject if stripe-signature header is absent          → 400
+  ├─ stripe.webhooks.constructEvent(body, sig, secret)
+  │    └─ Reject if signature verification fails          → 400
+  └─ Process verified event (checkout.session.completed, …)
+```
+
+### API key boundaries
+
+| Key | Where it lives | Notes |
+|---|---|---|
+| `STRIPE_SECRET_KEY` | Server env only | Never sent to the client |
+| `STRIPE_WEBHOOK_SECRET` | Server env only | Used for HMAC verification |
+| `ANTHROPIC_API_KEY` | Server env (preferred) | Falls back to user-supplied key in request body when not set |
+| `RESEND_API_KEY` | Server env only | Never sent to the client |
+| `CLERK_SECRET_KEY` | Server env only | Never sent to the client |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Public (safe to expose) | Clerk publishable key by design |
+| `NEXT_PUBLIC_FINNHUB_API_KEY` | Public | Finnhub free-tier key; use server-side proxying if you want to keep it private |
+| Alpaca `apiKey` / `apiSecret` | User-supplied per request | Never stored server-side; users enter them in Settings |
+
+> **Note on Alpaca credentials:** Users enter their own Alpaca paper/live API key and secret in the Settings tab. These are stored in `localStorage` via Zustand and forwarded to `/api/alpaca-order` on each request. They are **never** stored in your server environment. The route is still protected by Clerk authentication, so only signed-in users can call it.
+
+---
+
 ## 📡 Data & API Keys
 
 | Service | Free Tier | Used For |
@@ -339,6 +386,8 @@ Make sure to set `NEXT_PUBLIC_URL` to your production Vercel URL for Stripe redi
 - [ ] Options chain viewer
 - [ ] CSV portfolio export
 - [x] Email alert notifications (Resend)
+- [x] Unit test suite (Jest + ts-jest)
+- [x] GitHub Actions CI (lint + test)
 - [ ] Dark / light theme toggle
 - [ ] Mobile app (React Native)
 
