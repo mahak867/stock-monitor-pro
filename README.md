@@ -187,6 +187,35 @@ stock-monitor-pro/
 
 ---
 
+## ⚡ Try it in 5 Minutes
+
+> No Finnhub key? No problem — leave it as `demo` and the app runs entirely on realistic simulated data.
+
+```bash
+# 1. Clone & install (30 sec)
+git clone https://github.com/mahak867/stock-monitor-pro.git
+cd stock-monitor-pro
+npm install
+
+# 2. Create env file (1 min)
+cp .env.example .env.local
+# Open .env.local and fill in at minimum:
+#   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+#   CLERK_SECRET_KEY=sk_test_...
+# Leave NEXT_PUBLIC_FINNHUB_API_KEY=demo for simulated data
+
+# 3. Start dev server (30 sec)
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000), sign in with Clerk, and the full dashboard loads instantly.
+
+**Want AI features too?** Grab a free [Anthropic API key](https://console.anthropic.com/settings/keys) and paste it into **Settings → Claude AI Integration**. No server restart required.
+
+**Want live prices?** Get a free [Finnhub key](https://finnhub.io/) and set `NEXT_PUBLIC_FINNHUB_API_KEY` in `.env.local`.
+
+---
+
 ## ⚙️ Getting Started
 
 ### Prerequisites
@@ -300,7 +329,7 @@ To make specific routes public (e.g. a landing page), use `createRouteMatcher` f
 
 ---
 
-## 🛡️ Security Model
+## 🛡️ Security Model & Threat Model
 
 ### Route protection
 
@@ -309,12 +338,18 @@ To make specific routes public (e.g. a landing page), use `createRouteMatcher` f
 | All app pages | Clerk middleware (`auth.protect()`) |
 | `/api/analyze` | Clerk middleware **+** explicit `auth.protect()` in handler |
 | `/api/claude-trade` | Clerk middleware **+** explicit `auth.protect()` in handler |
-| `/api/checkout` | Clerk middleware |
-| `/api/alpaca-order` | Clerk middleware |
+| `/api/checkout` | Clerk middleware **+** explicit `auth.protect()` in handler |
+| `/api/alpaca-order` | Clerk middleware **+** explicit `auth.protect()` in handler |
 | `/api/notify` | Clerk middleware |
 | `/api/webhooks/stripe` | Public (required by Stripe) — verified via HMAC signature |
 
-### Stripe webhook signature verification
+### Session & authentication protection
+
+- All routes except `/api/webhooks/(.*)` are matched by the Clerk middleware and call `auth.protect()`. Unauthenticated requests are redirected to the Clerk sign-in screen.
+- Clerk handles session token issuance, rotation, and revocation. Tokens are short-lived JWTs; Clerk's SDK validates them on every request.
+- Social login (OAuth) is handled entirely by Clerk — no OAuth tokens are stored in this application.
+
+### Stripe webhook verification
 
 The `/api/webhooks/stripe` handler is intentionally public so Stripe can reach it.
 Every request is verified with [`stripe.webhooks.constructEvent`](https://stripe.com/docs/webhooks/signatures) using the `STRIPE_WEBHOOK_SECRET` environment variable.
@@ -329,6 +364,21 @@ POST /api/webhooks/stripe
   └─ Process verified event (checkout.session.completed, …)
 ```
 
+### Rate limiting
+
+The app currently relies on Vercel's built-in DDoS mitigation and Clerk's per-user session model. For a hardened production deployment, add an explicit rate-limiting layer:
+
+- **Recommended:** [Vercel's `@upstash/ratelimit`](https://vercel.com/docs/functions/edge-middleware/rate-limiting) middleware — add a sliding-window check (e.g. 60 requests / minute per user ID) in `middleware.ts` before the Clerk check.
+- At minimum, protect the high-cost routes (`/api/claude-trade`, `/api/analyze`) since each call incurs Anthropic API charges.
+- Finnhub's free tier is capped at 60 REST calls/minute; the app's built-in polling intervals (25 s REST refresh, 30 s alert check) stay safely inside this limit.
+
+### Request logging & secrets hygiene
+
+- **Server logs** — Vercel / Next.js access logs record request URLs. The app never places secrets in URL query parameters. Alpaca credentials are forwarded in request headers (`APCA-API-KEY-ID` / `APCA-API-SECRET-KEY`), not in query strings, to avoid log exposure.
+- **Error responses** — API error handlers return opaque messages (`"Anthropic API returned 502"`, `"Internal error"`) that do not echo back raw error strings from third-party services to the client.
+- **Environment variables** — `.gitignore` excludes all `.env*` files. Use your hosting provider's secret manager (Vercel Environment Variables, GitHub Actions Secrets) to inject keys at build/runtime.
+- **Dependency scanning** — The repository runs `npm audit` as part of CI. Review and patch flagged packages before promoting to production.
+
 ### API key boundaries
 
 | Key | Where it lives | Notes |
@@ -339,10 +389,10 @@ POST /api/webhooks/stripe
 | `RESEND_API_KEY` | Server env only | Never sent to the client |
 | `CLERK_SECRET_KEY` | Server env only | Never sent to the client |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Public (safe to expose) | Clerk publishable key by design |
-| `NEXT_PUBLIC_FINNHUB_API_KEY` | Public | Finnhub free-tier key; use server-side proxying if you want to keep it private |
-| Alpaca `apiKey` / `apiSecret` | User-supplied per request | Never stored server-side; users enter them in Settings |
+| `NEXT_PUBLIC_FINNHUB_API_KEY` | Public | Finnhub free-tier key; proxy server-side if you need to keep it private |
+| Alpaca `apiKey` / `apiSecret` | User-supplied per request | Forwarded in request headers to `/api/alpaca-order`; never stored server-side |
 
-> **Note on Alpaca credentials:** Users enter their own Alpaca paper/live API key and secret in the Settings tab. These are stored in `localStorage` via Zustand and forwarded to `/api/alpaca-order` on each request. They are **never** stored in your server environment. The route is still protected by Clerk authentication, so only signed-in users can call it.
+> **Note on Alpaca credentials:** Users enter their own Alpaca paper/live API key and secret in the Settings tab. These are stored in `localStorage` via Zustand and forwarded to `/api/alpaca-order` in request headers on each call. They are **never** stored in your server environment. The route is protected by Clerk authentication, so only signed-in users can call it.
 
 ---
 

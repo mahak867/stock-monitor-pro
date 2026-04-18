@@ -2186,6 +2186,19 @@ export default function App() {
             </motion.div>
           </AnimatePresence>
         </div>
+
+        {/* Persistent disclaimer bar */}
+        <div style={{
+          flexShrink: 0, borderTop: '1px solid rgba(245,158,11,0.14)',
+          background: 'rgba(245,158,11,0.04)', padding: '6px 22px',
+          display: 'flex', alignItems: 'center', gap: 7,
+        }}>
+          <AlertTriangle size={11} color="#f59e0b" style={{ flexShrink: 0 }} />
+          <p style={{ margin: 0, fontSize: 10, color: '#64748b', lineHeight: 1.5 }}>
+            <span style={{ fontWeight: 700, color: '#f59e0b', letterSpacing: '0.04em' }}>DISCLAIMER </span>
+            For educational purposes only. Not financial advice. All trades are simulated paper trading. Do not make real investment decisions based on data or AI analysis shown here.
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -1,7 +1,9 @@
 import Stripe from 'stripe';
 import { NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 
 export async function POST() {
+  await auth.protect();
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) {
     return NextResponse.json({ error: 'Stripe is not configured' }, { status: 503 });
