@@ -26,16 +26,18 @@
 | 📊 **Live Technical Charts** | Real-time price charts with SMA, EMA overlays and volume bars |
 | ⚡ **WebSocket Streaming** | Real-time trade data via Finnhub WebSocket with automatic REST fallback |
 | 🤖 **Claude AI Trade Assistant** | Full chat interface — analyze stocks, get buy/sell recommendations, execute simulated paper trades, and set price alerts via natural language |
+| 🦙 **Alpaca Brokerage Integration** | Submit real market orders (paper or live) directly from the app via the Alpaca API |
 | 🔐 **Auth with Clerk** | Secure sign-in / sign-up with social login support |
 | 💳 **Stripe Checkout** | One-click upgrade to Pro ($19/mo) via Stripe-hosted checkout |
 | 📰 **Market News Feed** | Live headlines from Finnhub's market news API with sentiment labels |
 | ⭐ **Persistent Watchlist** | Add/remove symbols, persisted to localStorage via Zustand |
 | 💼 **Portfolio Tracker** | Track positions with cost basis, P&L, and allocation chart |
 | 🔔 **Smart Price Alerts** | Auto-checking alert system with toast notifications when thresholds are crossed |
+| 📧 **Email Alert Notifications** | Triggered price alerts send a branded email via Resend (optional — requires `RESEND_API_KEY`) |
 | 🔎 **Deep Symbol Search** | Live quote preview in results, keyboard navigation (↑↓ Enter Esc), recently viewed history |
 | 📈 **Market Overview Bar** | S&P 500, Nasdaq 100, Dow Jones, Nifty 50 live mini-cards + US/IN market-open status |
 | 🧮 **Fundamentals Panel** | P/E, EPS, Beta, ROE, 52-week range, analyst recommendations, EPS history chart |
-| 📱 **Responsive Layout** | Collapsible sidebar, works on desktop and tablet |
+| 📱 **PWA + Responsive Layout** | Installable as a standalone Progressive Web App; collapsible sidebar for desktop and tablet |
 | 🌐 **Finnhub Integration** | Real stock quotes, candles, news, and symbol search |
 
 ---
@@ -135,12 +137,15 @@ The **AI Trader** tab gives you a full chat interface powered by Claude Sonnet. 
 | **Charts** | Recharts | Area, composed & bar charts |
 | **Auth** | Clerk | User authentication & sessions |
 | **Payments** | Stripe | Premium subscription checkout |
-| **State** | Zustand (persisted) | Portfolio, watchlist, alerts, recent symbols |
+| **Brokerage** | Alpaca Markets API | Real paper & live market order execution |
+| **Email** | Resend | Branded email notifications for price alerts |
+| **State** | Zustand (persisted) | Portfolio, watchlist, alerts, market mode, recent symbols |
 | **HTTP** | Axios | Finnhub REST API calls |
 | **WebSocket** | Finnhub WS | Real-time trade streaming |
 | **AI** | Anthropic Claude Sonnet | Stock analysis & paper trade execution |
 | **Data** | Finnhub API | Live quotes, candles, news, symbol search |
 | **Icons** | Lucide React | UI iconography |
+| **PWA** | Next.js Web Manifest | Installable standalone app |
 
 ---
 
@@ -152,22 +157,28 @@ stock-monitor-pro/
 │   ├── api/
 │   │   ├── analyze/
 │   │   │   └── route.ts          # Claude stock analysis (single stock)
+│   │   ├── alpaca-order/
+│   │   │   └── route.ts          # Alpaca brokerage order placement & position fetch
 │   │   ├── claude-trade/
 │   │   │   └── route.ts          # Claude AI trade assistant (chat + trade execution)
 │   │   ├── checkout/
 │   │   │   └── route.ts          # Stripe checkout session API
+│   │   ├── notify/
+│   │   │   └── route.ts          # Email price-alert notifications via Resend
 │   │   └── webhooks/
 │   │       └── stripe/           # Stripe webhook handler
+│   ├── components/
+│   │   └── ErrorBoundary.tsx     # React error boundary wrapper
 │   ├── globals.css
 │   ├── layout.tsx                 # Root layout with ClerkProvider
+│   ├── manifest.ts                # PWA web app manifest
 │   ├── page.tsx                   # Main dashboard (all UI components)
 │   └── favicon.ico
 ├── lib/
 │   ├── api.ts                     # Finnhub REST + WebSocket helpers, market indices, hours
-│   └── store.ts                   # Zustand store (portfolio, watchlist, alerts, recent symbols)
+│   └── store.ts                   # Zustand store (portfolio, watchlist, alerts, market mode, Alpaca, notify email)
 ├── public/                        # Static assets
 ├── middleware.ts                  # Clerk auth middleware (protects all routes)
-├── .env.example                   # Environment variable template
 ├── next.config.ts
 ├── tailwind.config.js
 └── tsconfig.json
@@ -213,11 +224,20 @@ NEXT_PUBLIC_FINNHUB_API_KEY=your_key_here
 # Optional — Claude AI Trade Assistant
 # Can also be provided per-user in the Settings tab
 ANTHROPIC_API_KEY=sk-ant-api03-...
+
+# Optional — Email price-alert notifications (Resend)
+RESEND_API_KEY=re_...
+
+# Optional — Alpaca brokerage (entered per-user in Settings)
+# ALPACA_KEY and ALPACA_SECRET are stored client-side via Zustand Settings tab
+# No server-side env vars needed; keys are passed from the browser to /api/alpaca-order
 ```
 
 > Leave `NEXT_PUBLIC_FINNHUB_API_KEY=demo` to run with simulated data — no API key needed.
 >
 > If `ANTHROPIC_API_KEY` is not set server-side, users can provide their own key in **Settings → Claude AI Integration**.
+>
+> If `RESEND_API_KEY` is not set, price-alert emails are silently skipped — the rest of the alert system still works.
 
 ### 3. Run Locally
 
