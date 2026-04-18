@@ -1,6 +1,13 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
   reactStrictMode: true,
-  images: { domains: ['logo.clearbit.com', 'finnhub.io'] },
-}
-module.exports = nextConfig
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: 'logo.clearbit.com' },
+      { protocol: 'https', hostname: 'finnhub.io' },
+    ],
+  },
+};
+
+export default nextConfig;
