@@ -11,8 +11,16 @@ export async function POST() {
     const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000';
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      line_items: [{ price_data: { currency: 'usd', product_data: { name: 'StockPro Premium' }, unit_amount: 1900 }, quantity: 1 }],
-      mode: 'payment',
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: { name: 'StockPro Premium' },
+          unit_amount: 1900,
+          recurring: { interval: 'month' },
+        },
+        quantity: 1,
+      }],
+      mode: 'subscription',
       success_url: baseUrl + '?success=true',
       cancel_url: baseUrl + '?canceled=true',
     });
