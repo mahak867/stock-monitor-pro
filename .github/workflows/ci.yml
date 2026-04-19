@@ -7,7 +7,7 @@ on:
 
 jobs:
   lint-and-test:
-    name: Lint & Test
+    name: Lint, Type-check & Test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,9 +26,18 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Type-check
+        run: npx tsc --noEmit
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_placeholder
+
       - name: Test
         run: npm test
         env:
           # Clerk requires a publishable key to initialise; a dummy value is
           # sufficient for the unit-test suite which does not exercise auth flows.
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_placeholder
+
+      - name: Security audit
+        # Fail the build only on high/critical severity advisories.
+        run: npm audit --audit-level=high

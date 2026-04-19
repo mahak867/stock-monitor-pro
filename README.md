@@ -12,8 +12,12 @@
 [![Stripe](https://img.shields.io/badge/Payments-Stripe-635BFF?style=flat-square&logo=stripe)](https://stripe.com/)
 [![Claude AI](https://img.shields.io/badge/AI-Claude%20Sonnet-CC785C?style=flat-square)](https://anthropic.com/)
 [![CI](https://github.com/mahak867/stock-monitor-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/mahak867/stock-monitor-pro/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](./LICENSE)
+[![Contributing](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](./CONTRIBUTING.md)
 
 > A full-stack, investor-ready stock monitoring platform with **three global market modes** (🇺🇸 US · 🇮🇳 India · ₿ Crypto), live WebSocket streaming, AI-powered paper trading, deep symbol search, portfolio analytics, and Stripe-powered premium subscriptions.
+
+**[🚀 Live Demo](https://stock-monitor-pro.vercel.app)** · **[📖 Contributing](./CONTRIBUTING.md)** · **[🔒 Security](./SECURITY.md)**
 
 </div>
 
@@ -102,6 +106,10 @@ The **AI Trader** tab gives you a full chat interface powered by Claude Sonnet. 
 ---
 
 ## 🖥️ App Preview
+
+> 📽️ **[Watch the 60-second demo video →](https://stock-monitor-pro.vercel.app)**
+>
+> *(Deploy to Vercel and record a screen capture — see [Try it in 5 minutes](#-try-it-in-5-minutes) below.)*
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -366,11 +374,16 @@ POST /api/webhooks/stripe
 
 ### Rate limiting
 
-The app currently relies on Vercel's built-in DDoS mitigation and Clerk's per-user session model. For a hardened production deployment, add an explicit rate-limiting layer:
+`/api/analyze` and `/api/claude-trade` are protected by an in-memory sliding-window rate limiter (`lib/rateLimit.ts`), keyed by Clerk user ID:
 
-- **Recommended:** [Vercel's `@upstash/ratelimit`](https://vercel.com/docs/functions/edge-middleware/rate-limiting) middleware — add a sliding-window check (e.g. 60 requests / minute per user ID) in `middleware.ts` before the Clerk check.
-- At minimum, protect the high-cost routes (`/api/claude-trade`, `/api/analyze`) since each call incurs Anthropic API charges.
-- Finnhub's free tier is capped at 60 REST calls/minute; the app's built-in polling intervals (25 s REST refresh, 30 s alert check) stay safely inside this limit.
+| Route | Limit |
+|---|---|
+| `/api/analyze` | 20 requests / user / minute |
+| `/api/claude-trade` | 30 requests / user / minute |
+
+Blocked requests receive HTTP **429** with a `Retry-After` header.
+
+> For multi-instance / multi-region deployments, replace the in-memory Map with a Redis-backed store such as [`@upstash/ratelimit`](https://github.com/upstash/ratelimit) for globally consistent limits. The `checkRateLimit` interface in `lib/rateLimit.ts` is designed to make this drop-in.
 
 ### Request logging & secrets hygiene
 
@@ -432,20 +445,36 @@ Make sure to set `NEXT_PUBLIC_URL` to your production Vercel URL for Stripe redi
 - [x] Market overview bar (SPX, QQQ, DJI, Nifty 50)
 - [x] US / India / Crypto multi-market support
 - [x] Recently viewed symbols
+- [x] Security headers (X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy)
+- [x] In-memory rate limiting on AI routes (sliding window, per-user)
+- [x] Input validation & HTML escaping on all API routes
 - [ ] Advanced technical indicators (RSI, MACD, Bollinger Bands)
 - [ ] Options chain viewer
 - [ ] CSV portfolio export
 - [x] Email alert notifications (Resend)
 - [x] Unit test suite (Jest + ts-jest)
-- [x] GitHub Actions CI (lint + test)
+- [x] GitHub Actions CI (lint + typecheck + test + audit)
 - [ ] Dark / light theme toggle
+- [ ] Redis-backed distributed rate limiting for multi-instance deployments
 - [ ] Mobile app (React Native)
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
+---
+
+## 🔒 Security
+
+To report a vulnerability, please follow the process in [SECURITY.md](./SECURITY.md).
 
 ---
 
 ## ⚠️ Disclaimer
 
-Stock Monitor Pro is a **personal project for educational purposes**. It is not financial advice. Do not make real investment decisions based on data or AI analysis shown in this application. All trades within the platform are simulated paper trading only.
+Stock Monitor Pro is a **personal project for educational purposes**. It is **not financial advice**. Do not make real investment decisions based on data or AI analysis shown in this application. All trades within the platform are simulated paper trading only.
 
 ---
 
