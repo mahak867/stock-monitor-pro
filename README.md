@@ -12,8 +12,12 @@
 [![Stripe](https://img.shields.io/badge/Payments-Stripe-635BFF?style=flat-square&logo=stripe)](https://stripe.com/)
 [![Claude AI](https://img.shields.io/badge/AI-Claude%20Sonnet-CC785C?style=flat-square)](https://anthropic.com/)
 [![CI](https://github.com/mahak867/stock-monitor-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/mahak867/stock-monitor-pro/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](./LICENSE)
+[![Contributing](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](./CONTRIBUTING.md)
 
 > A full-stack, investor-ready stock monitoring platform with **three global market modes** (🇺🇸 US · 🇮🇳 India · ₿ Crypto), live WebSocket streaming, AI-powered paper trading, deep symbol search, portfolio analytics, and Stripe-powered premium subscriptions.
+
+**[🚀 Live Demo](https://stock-monitor-pro.vercel.app)** · **[📖 Contributing](./CONTRIBUTING.md)** · **[🔒 Security](./SECURITY.md)**
 
 </div>
 
@@ -103,6 +107,10 @@ The **AI Trader** tab gives you a full chat interface powered by Claude Sonnet. 
 
 ## 🖥️ App Preview
 
+> 📽️ **[Watch the 60-second demo video →](https://stock-monitor-pro.vercel.app)**
+>
+> *(Deploy to Vercel and record a screen capture — see [Try it in 5 minutes](#-try-it-in-5-minutes) below.)*
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  📈 StockPro  │  AAPL  🇺🇸 US Market  ● US OPEN  [ Search symbol… ]         │
@@ -184,6 +192,35 @@ stock-monitor-pro/
 ├── tailwind.config.js
 └── tsconfig.json
 ```
+
+---
+
+## ⚡ Try it in 5 Minutes
+
+> No Finnhub key? No problem — leave it as `demo` and the app runs entirely on realistic simulated data.
+
+```bash
+# 1. Clone & install (30 sec)
+git clone https://github.com/mahak867/stock-monitor-pro.git
+cd stock-monitor-pro
+npm install
+
+# 2. Create env file (1 min)
+cp .env.example .env.local
+# Open .env.local and fill in at minimum:
+#   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+#   CLERK_SECRET_KEY=sk_test_...
+# Leave NEXT_PUBLIC_FINNHUB_API_KEY=demo for simulated data
+
+# 3. Start dev server (30 sec)
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000), sign in with Clerk, and the full dashboard loads instantly.
+
+**Want AI features too?** Grab a free [Anthropic API key](https://console.anthropic.com/settings/keys) and paste it into **Settings → Claude AI Integration**. No server restart required.
+
+**Want live prices?** Get a free [Finnhub key](https://finnhub.io/) and set `NEXT_PUBLIC_FINNHUB_API_KEY` in `.env.local`.
 
 ---
 
@@ -300,7 +337,7 @@ To make specific routes public (e.g. a landing page), use `createRouteMatcher` f
 
 ---
 
-## 🛡️ Security Model
+## 🛡️ Security Model & Threat Model
 
 ### Route protection
 
@@ -309,12 +346,18 @@ To make specific routes public (e.g. a landing page), use `createRouteMatcher` f
 | All app pages | Clerk middleware (`auth.protect()`) |
 | `/api/analyze` | Clerk middleware **+** explicit `auth.protect()` in handler |
 | `/api/claude-trade` | Clerk middleware **+** explicit `auth.protect()` in handler |
-| `/api/checkout` | Clerk middleware |
-| `/api/alpaca-order` | Clerk middleware |
+| `/api/checkout` | Clerk middleware **+** explicit `auth.protect()` in handler |
+| `/api/alpaca-order` | Clerk middleware **+** explicit `auth.protect()` in handler |
 | `/api/notify` | Clerk middleware |
 | `/api/webhooks/stripe` | Public (required by Stripe) — verified via HMAC signature |
 
-### Stripe webhook signature verification
+### Session & authentication protection
+
+- All routes except `/api/webhooks/(.*)` are matched by the Clerk middleware and call `auth.protect()`. Unauthenticated requests are redirected to the Clerk sign-in screen.
+- Clerk handles session token issuance, rotation, and revocation. Tokens are short-lived JWTs; Clerk's SDK validates them on every request.
+- Social login (OAuth) is handled entirely by Clerk — no OAuth tokens are stored in this application.
+
+### Stripe webhook verification
 
 The `/api/webhooks/stripe` handler is intentionally public so Stripe can reach it.
 Every request is verified with [`stripe.webhooks.constructEvent`](https://stripe.com/docs/webhooks/signatures) using the `STRIPE_WEBHOOK_SECRET` environment variable.
@@ -329,6 +372,26 @@ POST /api/webhooks/stripe
   └─ Process verified event (checkout.session.completed, …)
 ```
 
+### Rate limiting
+
+`/api/analyze` and `/api/claude-trade` are protected by an in-memory sliding-window rate limiter (`lib/rateLimit.ts`), keyed by Clerk user ID:
+
+| Route | Limit |
+|---|---|
+| `/api/analyze` | 20 requests / user / minute |
+| `/api/claude-trade` | 30 requests / user / minute |
+
+Blocked requests receive HTTP **429** with a `Retry-After` header.
+
+> For multi-instance / multi-region deployments, replace the in-memory Map with a Redis-backed store such as [`@upstash/ratelimit`](https://github.com/upstash/ratelimit) for globally consistent limits. The `checkRateLimit` interface in `lib/rateLimit.ts` is designed to make this drop-in.
+
+### Request logging & secrets hygiene
+
+- **Server logs** — Vercel / Next.js access logs record request URLs. The app never places secrets in URL query parameters. Alpaca credentials are forwarded in request headers (`APCA-API-KEY-ID` / `APCA-API-SECRET-KEY`), not in query strings, to avoid log exposure.
+- **Error responses** — API error handlers return opaque messages (`"Anthropic API returned 502"`, `"Internal error"`) that do not echo back raw error strings from third-party services to the client.
+- **Environment variables** — `.gitignore` excludes all `.env*` files. Use your hosting provider's secret manager (Vercel Environment Variables, GitHub Actions Secrets) to inject keys at build/runtime.
+- **Dependency scanning** — The repository runs `npm audit` as part of CI. Review and patch flagged packages before promoting to production.
+
 ### API key boundaries
 
 | Key | Where it lives | Notes |
@@ -339,10 +402,10 @@ POST /api/webhooks/stripe
 | `RESEND_API_KEY` | Server env only | Never sent to the client |
 | `CLERK_SECRET_KEY` | Server env only | Never sent to the client |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Public (safe to expose) | Clerk publishable key by design |
-| `NEXT_PUBLIC_FINNHUB_API_KEY` | Public | Finnhub free-tier key; use server-side proxying if you want to keep it private |
-| Alpaca `apiKey` / `apiSecret` | User-supplied per request | Never stored server-side; users enter them in Settings |
+| `NEXT_PUBLIC_FINNHUB_API_KEY` | Public | Finnhub free-tier key; proxy server-side if you need to keep it private |
+| Alpaca `apiKey` / `apiSecret` | User-supplied per request | Forwarded in request headers to `/api/alpaca-order`; never stored server-side |
 
-> **Note on Alpaca credentials:** Users enter their own Alpaca paper/live API key and secret in the Settings tab. These are stored in `localStorage` via Zustand and forwarded to `/api/alpaca-order` on each request. They are **never** stored in your server environment. The route is still protected by Clerk authentication, so only signed-in users can call it.
+> **Note on Alpaca credentials:** Users enter their own Alpaca paper/live API key and secret in the Settings tab. These are stored in `localStorage` via Zustand and forwarded to `/api/alpaca-order` in request headers on each call. They are **never** stored in your server environment. The route is protected by Clerk authentication, so only signed-in users can call it.
 
 ---
 
@@ -382,20 +445,36 @@ Make sure to set `NEXT_PUBLIC_URL` to your production Vercel URL for Stripe redi
 - [x] Market overview bar (SPX, QQQ, DJI, Nifty 50)
 - [x] US / India / Crypto multi-market support
 - [x] Recently viewed symbols
+- [x] Security headers (X-Frame-Options, HSTS, X-Content-Type-Options, Referrer-Policy)
+- [x] In-memory rate limiting on AI routes (sliding window, per-user)
+- [x] Input validation & HTML escaping on all API routes
 - [ ] Advanced technical indicators (RSI, MACD, Bollinger Bands)
 - [ ] Options chain viewer
 - [ ] CSV portfolio export
 - [x] Email alert notifications (Resend)
 - [x] Unit test suite (Jest + ts-jest)
-- [x] GitHub Actions CI (lint + test)
+- [x] GitHub Actions CI (lint + typecheck + test + audit)
 - [ ] Dark / light theme toggle
+- [ ] Redis-backed distributed rate limiting for multi-instance deployments
 - [ ] Mobile app (React Native)
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
+---
+
+## 🔒 Security
+
+To report a vulnerability, please follow the process in [SECURITY.md](./SECURITY.md).
 
 ---
 
 ## ⚠️ Disclaimer
 
-Stock Monitor Pro is a **personal project for educational purposes**. It is not financial advice. Do not make real investment decisions based on data or AI analysis shown in this application. All trades within the platform are simulated paper trading only.
+Stock Monitor Pro is a **personal project for educational purposes**. It is **not financial advice**. Do not make real investment decisions based on data or AI analysis shown in this application. All trades within the platform are simulated paper trading only.
 
 ---
 

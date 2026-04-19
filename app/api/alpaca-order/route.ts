@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 
 export async function POST(req: NextRequest) {
+  await auth.protect();
   try {
     const { symbol, qty, side, type = 'market', apiKey, apiSecret, mode = 'paper' } = await req.json();
 
@@ -50,12 +52,13 @@ export async function POST(req: NextRequest) {
 }
 
 // Get open positions from Alpaca
+// Credentials are read from APCA-API-KEY-ID and APCA-API-SECRET-KEY request headers.
 export async function GET(req: NextRequest) {
+  await auth.protect();
   try {
-    const { searchParams } = req.nextUrl;
-    const apiKey = searchParams.get('apiKey');
-    const apiSecret = searchParams.get('apiSecret');
-    const mode = searchParams.get('mode') || 'paper';
+    const apiKey = req.headers.get('APCA-API-KEY-ID');
+    const apiSecret = req.headers.get('APCA-API-SECRET-KEY');
+    const mode = req.nextUrl.searchParams.get('mode') || 'paper';
 
     if (!apiKey || !apiSecret) {
       return NextResponse.json({ error: 'Missing API credentials.' }, { status: 400 });

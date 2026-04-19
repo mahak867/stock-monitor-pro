@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 interface AnalyzeRequest {
   symbol: string;
@@ -14,8 +15,20 @@ interface AnalyzeRequest {
   apiKey?: string;
 }
 
+/** Only allow symbols that look like real tickers: alphanumeric, colon, period, hyphen. */
+const SYMBOL_RE = /^[A-Za-z0-9.:/-]{1,24}$/;
+
 export async function POST(req: NextRequest) {
-  await auth.protect();
+  const { userId } = await auth.protect();
+
+  // 20 analysis calls per user per minute to prevent accidental/intentional abuse.
+  const rl = checkRateLimit(`analyze:${userId}`, 20, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait before analysing again.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    );
+  }
 
   let body: AnalyzeRequest;
   try {
@@ -28,6 +41,9 @@ export async function POST(req: NextRequest) {
 
   if (!symbol || typeof price !== 'number') {
     return NextResponse.json({ error: 'symbol and price are required' }, { status: 400 });
+  }
+  if (!SYMBOL_RE.test(symbol)) {
+    return NextResponse.json({ error: 'Invalid symbol format' }, { status: 400 });
   }
 
   // Use server-side key if configured, otherwise fall back to the user-supplied key.

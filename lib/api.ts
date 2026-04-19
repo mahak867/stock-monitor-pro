@@ -278,6 +278,9 @@ export class FinnhubWS {
   private handlers = new Map<string, Set<(price: number) => void>>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
+  private retryCount = 0;
+  private static readonly MAX_RETRIES = 8;
+  private static readonly BASE_DELAY_MS = 2000;
 
   constructor(private readonly apiKey: string) {
     this.connect();
@@ -287,14 +290,23 @@ export class FinnhubWS {
     if (this.closed || typeof window === 'undefined') return;
     try {
       this.ws = new WebSocket(`wss://ws.finnhub.io?token=${this.apiKey}`);
-      this.ws.onopen = () => this.subs.forEach(s => this.sendMsg({ type: 'subscribe', symbol: s }));
+      this.ws.onopen = () => {
+        this.retryCount = 0;
+        this.subs.forEach(s => this.sendMsg({ type: 'subscribe', symbol: s }));
+      };
       this.ws.onmessage = ({ data }) => {
         try {
           const msg = JSON.parse(data as string) as { type: string; data?: Array<{ p: number; s: string }> };
           if (msg.type === 'trade') msg.data?.forEach(t => this.handlers.get(t.s)?.forEach(h => h(t.p)));
         } catch { /* ignore */ }
       };
-      this.ws.onclose = () => { if (!this.closed) this.reconnectTimer = setTimeout(() => this.connect(), 4000); };
+      this.ws.onclose = () => {
+        if (!this.closed && this.retryCount < FinnhubWS.MAX_RETRIES) {
+          const delay = Math.min(FinnhubWS.BASE_DELAY_MS * 2 ** this.retryCount, 30000);
+          this.retryCount++;
+          this.reconnectTimer = setTimeout(() => this.connect(), delay);
+        }
+      };
       this.ws.onerror  = () => this.ws?.close();
     } catch { /* SSR / unsupported */ }
   }

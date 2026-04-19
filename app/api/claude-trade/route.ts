@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
+import { checkRateLimit } from '@/lib/rateLimit';
 
 interface ChatMessage { role: 'user' | 'assistant'; content: string; }
 interface PortfolioItem { symbol: string; name: string; quantity: number; avgPrice: number; currentPrice: number; }
@@ -12,6 +13,10 @@ interface TradeRequest {
   balance: number;
   apiKey?: string;
 }
+
+/** Maximum total character length across all messages to cap token cost. */
+const MAX_MESSAGES = 40;
+const MAX_MSG_CHARS = 20_000;
 
 function buildSystemPrompt(portfolio: PortfolioItem[], watchlist: WatchItem[], balance: number): string {
   const portfolioStr =
@@ -73,7 +78,16 @@ RULES:
 }
 
 export async function POST(req: NextRequest) {
-  await auth.protect();
+  const { userId } = await auth.protect();
+
+  // 30 AI chat messages per user per minute.
+  const rl = checkRateLimit(`claude-trade:${userId}`, 30, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait before sending another message.' },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } },
+    );
+  }
 
   let body: TradeRequest;
   try {
@@ -86,6 +100,13 @@ export async function POST(req: NextRequest) {
 
   if (!messages?.length) {
     return NextResponse.json({ error: 'messages array is required' }, { status: 400 });
+  }
+  if (messages.length > MAX_MESSAGES) {
+    return NextResponse.json({ error: `Message history too long (max ${MAX_MESSAGES})` }, { status: 400 });
+  }
+  const totalChars = messages.reduce((s, m) => s + (m.content?.length ?? 0), 0);
+  if (totalChars > MAX_MSG_CHARS) {
+    return NextResponse.json({ error: 'Message content exceeds maximum allowed length' }, { status: 400 });
   }
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY || apiKey;
