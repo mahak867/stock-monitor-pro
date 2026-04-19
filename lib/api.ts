@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 
 const FKEY = process.env.NEXT_PUBLIC_FINNHUB_API_KEY || 'demo';
 const BASE = 'https://finnhub.io/api/v1';
