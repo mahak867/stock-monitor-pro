@@ -23,9 +23,23 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+function AppProviders({ children }: { children: React.ReactNode }) {
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  if (!publishableKey) {
+    console.warn(
+      "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is not set. Using a non-functional Clerk fallback key for build-time rendering only.",
+    );
+  }
+  return (
+    <ClerkProvider publishableKey={publishableKey ?? "pk_test_Y2xlcmsuZXhhbXBsZS5jb20k"}>
+      {children}
+    </ClerkProvider>
+  );
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider>
+    <AppProviders>
       <html lang="en" className="dark">
         <head>
           <link rel="manifest" href="/manifest.webmanifest" />
@@ -46,6 +60,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
         </body>
       </html>
-    </ClerkProvider>
+    </AppProviders>
   );
-} 
+}

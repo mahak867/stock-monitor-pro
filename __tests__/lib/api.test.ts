@@ -136,13 +136,8 @@ describe('isUSMarketOpen', () => {
     // Simpler: mock Date constructor to return a fixed value.
     const fixed = new RealDate(isoLike);
     const MockDate = class extends RealDate {
-      constructor(...args: ConstructorParameters<typeof RealDate>) {
-        if (args.length === 0) {
-          super(fixed.getTime());
-        } else {
-          // @ts-expect-error spread
-          super(...args);
-        }
+      constructor(value?: string | number | Date) {
+        super(value ?? fixed.getTime());
       }
       static now() {
         return fixed.getTime();
